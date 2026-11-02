@@ -501,10 +501,269 @@
     }
   }
 
+  // ===================== GEMINI 3.8 FLASH — AI MEAL RECOGNITION =====================
+  const GEMINI_KEY_STORAGE = 'nutritrack_gemini_api_key_v1';
+  const GEMINI_MODEL = 'gemini-3.8-flash';
+  const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+
+  function getGeminiApiKey() {
+    try {
+      return (localStorage.getItem(GEMINI_KEY_STORAGE) || '').trim();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function setGeminiApiKey(key) {
+    try {
+      const clean = String(key || '').trim();
+      if (clean) {
+        localStorage.setItem(GEMINI_KEY_STORAGE, clean);
+      } else {
+        localStorage.removeItem(GEMINI_KEY_STORAGE);
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function compressImageForAi(file, maxDim = 1024, quality = 0.82) {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxDim / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+          const w = Math.max(1, Math.round((img.naturalWidth || 800) * scale));
+          const h = Math.max(1, Math.round((img.naturalHeight || 600) * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          const out = canvas.toDataURL('image/jpeg', quality);
+          URL.revokeObjectURL(url);
+          resolve(out);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Impossibile leggere l\'immagine selezionata.'));
+      };
+      img.src = url;
+    });
+
+    const commaIdx = dataUrl.indexOf(',');
+    return {
+      previewDataUrl: dataUrl,
+      base64: commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+      mimeType: 'image/jpeg'
+    };
+  }
+
+  const MEAL_ANALYSIS_SCHEMA = {
+    type: 'object',
+    properties: {
+      dish_name: {
+        type: 'string',
+        description: 'Nome complessivo del piatto o pasto in italiano.'
+      },
+      confidence: {
+        type: 'string',
+        enum: ['alta', 'media', 'bassa'],
+        description: 'Livello di confidenza della stima delle porzioni.'
+      },
+      notes: {
+        type: 'string',
+        description: 'Breve spiegazione in italiano su porzioni e condimenti stimati.'
+      },
+      items: {
+        type: 'array',
+        description: 'Lista degli ingredienti o alimenti distinti nel piatto.',
+        items: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Nome in italiano, specificando "(cotto)" se il peso stimato nel piatto è da cotto.'
+            },
+            estimated_grams: {
+              type: 'number',
+              description: 'Peso stimato in grammi dell\'alimento così come presente nel piatto.'
+            },
+            kcal_per_100g: {
+              type: 'number',
+              description: 'Calorie (kcal) per 100g nello stesso stato fisico (cotto/crudo) di estimated_grams.'
+            },
+            carbs_per_100g: {
+              type: 'number',
+              description: 'Carboidrati in grammi per 100g.'
+            },
+            sugars_per_100g: {
+              type: 'number',
+              description: 'Zuccheri in grammi per 100g.'
+            },
+            protein_per_100g: {
+              type: 'number',
+              description: 'Proteine in grammi per 100g.'
+            },
+            fat_per_100g: {
+              type: 'number',
+              description: 'Grassi totali in grammi per 100g.'
+            },
+            saturated_fat_per_100g: {
+              type: 'number',
+              description: 'Grassi saturi in grammi per 100g.'
+            },
+            fiber_per_100g: {
+              type: 'number',
+              description: 'Fibre in grammi per 100g.'
+            },
+            sodium_mg_per_100g: {
+              type: 'number',
+              description: 'Sodio in milligrammi (mg) per 100g.'
+            }
+          },
+          required: [
+            'name',
+            'estimated_grams',
+            'kcal_per_100g',
+            'carbs_per_100g',
+            'protein_per_100g',
+            'fat_per_100g'
+          ]
+        }
+      }
+    },
+    required: ['dish_name', 'confidence', 'notes', 'items']
+  };
+
+  async function analyzeMealWithGemini({ imageBase64, mimeType, userHint }) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      throw new Error('Inserisci prima la tua chiave API Gemini gratuita per attivare il riconoscimento AI.');
+    }
+    if (!imageBase64 && (!userHint || !userHint.trim())) {
+      throw new Error('Scatta/scegli una foto del piatto oppure scrivi cosa hai mangiato.');
+    }
+
+    const systemInstruction = [
+      'Sei un nutrizionista italiano esperto nella valutazione visiva dei piatti e nelle tabelle nutrizionali CREA / BDA-IEO.',
+      'Identifica con precisione ogni componente/ingrediente del pasto (inclusi i condimenti probabili come olio extravergine d\'oliva, salse o formaggio grattugiato).',
+      'REGOLA FONDAMENTALE: i valori per 100g (kcal_per_100g, carbs_per_100g, protein_per_100g, fat_per_100g, ecc.) DEVONO corrispondere allo stesso stato (cotto o crudo) del peso stimato nel piatto (estimated_grams).',
+      'Ad esempio, per 180g di pasta cotta nel piatto usa i valori della pasta cotta (~155 kcal/100g) e scrivi "(cotta)" nel nome.'
+    ].join(' ');
+
+    const promptParts = [];
+    if (imageBase64) {
+      promptParts.push({
+        type: 'image',
+        data: imageBase64,
+        mime_type: mimeType || 'image/jpeg'
+      });
+    }
+
+    const textPrompt = userHint && userHint.trim()
+      ? `Analizza questo pasto tenendo conto anche di questa indicazione dell'utente: "${userHint.trim()}". Restituisci gli alimenti riconosciuti con peso stimato in grammi e valori nutrizionali per 100g.`
+      : 'Analizza la foto di questo piatto, riconosci tutti gli alimenti e condimenti presenti, stima i grammi di ciascuno nel piatto e i relativi valori nutrizionali per 100g.';
+
+    promptParts.push({ type: 'text', text: textPrompt });
+
+    const res = await fetch(GEMINI_INTERACTIONS_URL, {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Api-Revision': '2026-05-20'
+      },
+      body: JSON.stringify({
+        model: GEMINI_MODEL,
+        store: false,
+        system_instruction: systemInstruction,
+        input: promptParts,
+        response_format: {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: MEAL_ANALYSIS_SCHEMA
+        }
+      })
+    });
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const apiMsg = data?.error?.message || `Errore API Gemini (HTTP ${res.status})`;
+      if (res.status === 400 || res.status === 401 || res.status === 403) {
+        throw new Error(`Chiave API non valida o non autorizzata: ${apiMsg}`);
+      }
+      throw new Error(apiMsg);
+    }
+
+    let outputText = typeof data?.output_text === 'string' ? data.output_text : '';
+    if (!outputText && Array.isArray(data?.steps)) {
+      const chunks = [];
+      for (let i = data.steps.length - 1; i >= 0; i--) {
+        const step = data.steps[i];
+        if (step && step.type === 'model_output' && Array.isArray(step.content)) {
+          for (const part of step.content) {
+            if (part && part.type === 'text' && typeof part.text === 'string') {
+              chunks.push(part.text);
+            }
+          }
+          if (chunks.length > 0) break;
+        }
+      }
+      outputText = chunks.join('');
+    }
+
+    if (!outputText) {
+      throw new Error('Risposta vuota dal modello AI. Riprova con una foto più nitida.');
+    }
+
+    const parsed = JSON.parse(outputText);
+    if (!parsed || !Array.isArray(parsed.items) || parsed.items.length === 0) {
+      throw new Error('Nessun alimento riconosciuto nella foto. Prova ad aggiungere una breve descrizione.');
+    }
+
+    return {
+      dishName: String(parsed.dish_name || 'Piatto analizzato con AI').trim(),
+      confidence: parsed.confidence || 'media',
+      notes: String(parsed.notes || '').trim(),
+      items: parsed.items.map((it, idx) => ({
+        tempId: `ai_item_${Date.now()}_${idx}`,
+        checked: true,
+        name: String(it.name || 'Alimento').trim(),
+        grams: Math.max(1, Math.round(num(it.estimated_grams, 100))),
+        food: {
+          id: `custom_ai_${Date.now()}_${idx}`,
+          name: String(it.name || 'Alimento').trim(),
+          brand: 'Stima Gemini AI ✨',
+          servingName: `Porzione stimata (${Math.max(1, Math.round(num(it.estimated_grams, 100)))} g)`,
+          servingGrams: Math.max(1, Math.round(num(it.estimated_grams, 100))),
+          kcal: Math.max(0, Math.round(num(it.kcal_per_100g, 0))),
+          carbs: round1(Math.max(0, num(it.carbs_per_100g, 0))),
+          sugars: round1(Math.max(0, num(it.sugars_per_100g, 0))),
+          protein: round1(Math.max(0, num(it.protein_per_100g, 0))),
+          fat: round1(Math.max(0, num(it.fat_per_100g, 0))),
+          saturatedFat: round1(Math.max(0, num(it.saturated_fat_per_100g, 0))),
+          fiber: round1(Math.max(0, num(it.fiber_per_100g, 0))),
+          sodium: Math.max(0, Math.round(num(it.sodium_mg_per_100g, 0)))
+        }
+      }))
+    };
+  }
+
   window.nutriApi = {
     searchOpenFoodFacts,
     lookupBarcode,
     detectBarcodeFromImageFile,
-    LiveBarcodeScanner
+    LiveBarcodeScanner,
+    getGeminiApiKey,
+    setGeminiApiKey,
+    compressImageForAi,
+    analyzeMealWithGemini
   };
 })();

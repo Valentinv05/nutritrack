@@ -518,8 +518,8 @@ button {
 /* ==================== QUICK STRIP ==================== */
 .quick-strip {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
 }
 
 .quick-action-card {
@@ -528,15 +528,21 @@ button {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 11px 8px;
+  padding: 10px 4px;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
-  font-size: 0.76rem;
+  font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-secondary);
   box-shadow: var(--shadow-card);
   transition: transform 0.12s ease, border-color 0.15s ease;
+}
+
+.quick-action-card.ai-highlight {
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.16), rgba(56, 189, 248, 0.12));
+  border-color: rgba(16, 185, 129, 0.45);
+  color: var(--text-primary);
 }
 
 .quick-action-card:active {
@@ -1526,6 +1532,141 @@ button {
   font-weight: 700;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   animation: fadeIn 0.18s ease-out;
+}
+
+/* AI Meal Recognition Modal */
+.ai-key-box {
+  background: var(--bg-card-elevated);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+  font-size: 0.79rem;
+}
+
+.ai-key-pill-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 7px 11px;
+  margin-bottom: 12px;
+  font-size: 0.76rem;
+}
+
+.ai-photo-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ai-preview-wrap {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  margin-bottom: 10px;
+  max-height: 200px;
+  background: #020617;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-preview-wrap img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  display: block;
+}
+
+.ai-remove-photo-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #f8fafc;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.ai-results-card {
+  background: var(--bg-card-elevated);
+  border: 1px solid rgba(16, 185, 129, 0.38);
+  border-radius: 16px;
+  padding: 13px;
+  margin-top: 14px;
+}
+
+.ai-total-banner {
+  background: var(--bg-input);
+  border-radius: 11px;
+  padding: 9px 11px;
+  margin: 10px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.ai-ing-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ai-ing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 11px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+}
+
+.ai-ing-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ai-ing-left input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.ai-ing-grams-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.ai-ing-grams-input {
+  width: 64px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  text-align: center;
+  font-weight: 800;
+  font-size: 0.85rem;
 }
 
 .hidden {

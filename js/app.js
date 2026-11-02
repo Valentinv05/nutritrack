@@ -31,7 +31,9 @@
     activeModalFood: null, // food object when adding or editing
     editingEntry: null,    // { dateKey, mealId, entryId } when editing existing entry
     activeMet: 4.3,
-    deferredInstallPrompt: null
+    deferredInstallPrompt: null,
+    aiImage: null,
+    aiResult: null
   };
 
   let onlineSearchAbort = null;
@@ -725,6 +727,7 @@
     $('target-fiber').value = t.fiber;
 
     $('manual-targets-panel').classList.toggle('hidden', $('prof-auto-targets').checked);
+    $('profile-gemini-key').value = api.getGeminiApiKey();
     updateTdeeLivePreview();
   }
 
@@ -754,6 +757,112 @@
       </div>
       <div style="margin-top: 8px; text-align: center; font-size: 0.75rem; color: var(--text-secondary);">
         Macro consigliati: <strong>C ${calc.carbs}g</strong> · <strong>P ${calc.protein}g</strong> · <strong>G ${calc.fat}g</strong> · Acqua <strong>${calc.waterMl} ml</strong>
+      </div>
+    `;
+  }
+
+  // ==================== AI MEAL PHOTO RECOGNITION ====================
+  function syncAiKeyUi(forceEdit = false) {
+    const hasKey = Boolean(api.getGeminiApiKey());
+    const showSetup = forceEdit || !hasKey;
+    $('ai-key-setup-box').classList.toggle('hidden', !showSetup);
+    $('ai-key-active-pill').classList.toggle('hidden', showSetup);
+    if (showSetup) {
+      $('ai-api-key-input').value = api.getGeminiApiKey();
+    }
+  }
+
+  function openAiMealModal(mealOverride) {
+    const mealId = mealOverride || uiState.targetMeal || guessDefaultMeal();
+    $('ai-target-meal').value = mealId;
+    syncAiKeyUi(false);
+    openModal('modal-ai-meal');
+  }
+
+  async function handleAiPhotoFile(file) {
+    if (!file) return;
+    const statusEl = $('ai-status-msg');
+    statusEl.classList.remove('hidden');
+    statusEl.style.color = 'var(--text-secondary)';
+    statusEl.textContent = '📸 Ottimizzazione foto in corso...';
+
+    try {
+      const compressed = await api.compressImageForAi(file);
+      uiState.aiImage = compressed;
+      $('ai-photo-preview-img').src = compressed.previewDataUrl;
+      $('ai-photo-preview-wrap').classList.remove('hidden');
+      $('ai-results-box').classList.add('hidden');
+      statusEl.classList.add('hidden');
+    } catch (err) {
+      statusEl.style.color = 'var(--color-danger)';
+      statusEl.textContent = `⚠️ ${err.message}`;
+    }
+  }
+
+  function renderAiResults() {
+    const res = uiState.aiResult;
+    if (!res) {
+      $('ai-results-box').classList.add('hidden');
+      return;
+    }
+
+    $('ai-results-box').classList.remove('hidden');
+    $('ai-dish-title').textContent = `🍽️ ${res.dishName}`;
+    $('ai-confidence-badge').textContent = `Confidenza ${res.confidence}`;
+    $('ai-dish-notes').textContent = res.notes || '';
+
+    const listEl = $('ai-ingredients-list');
+    listEl.innerHTML = res.items.map((it, idx) => {
+      const scaled = storage.scaleFood(it.food, it.grams);
+      return `
+        <div class="ai-ing-row" data-ai-idx="${idx}">
+          <label class="ai-ing-left">
+            <input type="checkbox" class="ai-ing-check" data-ai-idx="${idx}" ${it.checked ? 'checked' : ''} />
+            <div style="min-width: 0;">
+              <div style="font-weight: 700; font-size: 0.85rem;">${escapeHtml(it.name)}</div>
+              <div class="ai-ing-macros" data-ai-macros="${idx}" style="font-size: 0.73rem; color: var(--text-muted);">
+                <strong>${scaled.kcal} kcal</strong> · C ${scaled.carbs}g · P ${scaled.protein}g · G ${scaled.fat}g
+              </div>
+            </div>
+          </label>
+          <div class="ai-ing-grams-wrap">
+            <input type="number" class="ai-ing-grams-input" data-ai-idx="${idx}"
+                   value="${it.grams}" min="1" max="3000" step="1" inputmode="decimal" aria-label="Grammi" />
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 700;">g</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    updateAiTotalsBanner();
+  }
+
+  function updateAiTotalsBanner() {
+    const res = uiState.aiResult;
+    if (!res) return;
+
+    let totKcal = 0, totC = 0, totP = 0, totF = 0, count = 0;
+    res.items.forEach((it, idx) => {
+      const scaled = storage.scaleFood(it.food, it.grams);
+      const macroLine = document.querySelector(`[data-ai-macros="${idx}"]`);
+      if (macroLine) {
+        macroLine.innerHTML = `<strong>${scaled.kcal} kcal</strong> · C ${scaled.carbs}g · P ${scaled.protein}g · G ${scaled.fat}g`;
+      }
+      if (it.checked) {
+        count++;
+        totKcal += scaled.kcal;
+        totC += scaled.carbs;
+        totP += scaled.protein;
+        totF += scaled.fat;
+      }
+    });
+
+    $('ai-total-summary').innerHTML = `
+      <div><strong>Totale selezionato (${count}):</strong> <span style="color: var(--accent-primary); font-weight: 800;">${Math.round(totKcal)} kcal</span></div>
+      <div style="font-size: 0.75rem; font-weight: 700;">
+        <span class="tag-c">C ${window.round1(totC)}g</span> ·
+        <span class="tag-p">P ${window.round1(totP)}g</span> ·
+        <span class="tag-f">G ${window.round1(totF)}g</span>
       </div>
     `;
   }
@@ -1034,6 +1143,7 @@
     });
 
     // Diary quick strip
+    $('btn-diary-ai').addEventListener('click', () => openAiMealModal(guessDefaultMeal()));
     $('btn-diary-search').addEventListener('click', () => {
       uiState.targetMeal = guessDefaultMeal();
       switchTab('foods');
@@ -1182,6 +1292,8 @@
       renderCategoryChips();
       renderFoodsList();
     });
+
+    $('btn-foods-ai').addEventListener('click', () => openAiMealModal(uiState.targetMeal));
 
     $('btn-new-custom-food').addEventListener('click', () => {
       $('form-custom-food').reset();
@@ -1414,6 +1526,129 @@
       showToast('🎯 Obiettivi aggiornati con successo!');
     });
 
+    // AI Meal Recognition Events
+    $('btn-save-ai-key').addEventListener('click', () => {
+      const k = $('ai-api-key-input').value.trim();
+      api.setGeminiApiKey(k);
+      $('profile-gemini-key').value = k;
+      syncAiKeyUi(false);
+      showToast(k ? '🔑 Chiave Gemini AI salvata!' : 'Chiave AI rimossa');
+    });
+
+    $('btn-change-ai-key').addEventListener('click', () => {
+      syncAiKeyUi(true);
+      $('ai-api-key-input').focus();
+    });
+
+    $('btn-save-profile-ai-key').addEventListener('click', () => {
+      const k = $('profile-gemini-key').value.trim();
+      api.setGeminiApiKey(k);
+      showToast(k ? '🔑 Chiave Gemini AI salvata!' : 'Chiave AI rimossa');
+    });
+
+    $('ai-camera-input').addEventListener('change', async (e) => {
+      const f = e.target.files?.[0];
+      if (f) await handleAiPhotoFile(f);
+      e.target.value = '';
+    });
+
+    $('ai-gallery-input').addEventListener('change', async (e) => {
+      const f = e.target.files?.[0];
+      if (f) await handleAiPhotoFile(f);
+      e.target.value = '';
+    });
+
+    $('btn-ai-remove-photo').addEventListener('click', () => {
+      uiState.aiImage = null;
+      $('ai-photo-preview-img').src = '';
+      $('ai-photo-preview-wrap').classList.add('hidden');
+    });
+
+    $('btn-run-ai-analysis').addEventListener('click', async () => {
+      // Auto-save key if user pasted it in setup input without clicking "Salva" first
+      const pendingKey = $('ai-api-key-input').value.trim();
+      if (!api.getGeminiApiKey() && pendingKey) {
+        api.setGeminiApiKey(pendingKey);
+        $('profile-gemini-key').value = pendingKey;
+        syncAiKeyUi(false);
+      }
+
+      const btn = $('btn-run-ai-analysis');
+      const statusEl = $('ai-status-msg');
+      btn.disabled = true;
+      btn.textContent = '⏳ Analisi con Gemini AI in corso...';
+      statusEl.classList.remove('hidden');
+      statusEl.style.color = 'var(--color-carbs)';
+      statusEl.textContent = '✨ Riconoscimento ingredienti, pesi e macronutrienti...';
+
+      try {
+        const result = await api.analyzeMealWithGemini({
+          imageBase64: uiState.aiImage?.base64 || null,
+          mimeType: uiState.aiImage?.mimeType || 'image/jpeg',
+          userHint: $('ai-user-hint').value
+        });
+        uiState.aiResult = result;
+        statusEl.classList.add('hidden');
+        renderAiResults();
+      } catch (err) {
+        statusEl.style.color = 'var(--color-danger)';
+        statusEl.textContent = `⚠️ ${err.message}`;
+        if (!api.getGeminiApiKey()) {
+          syncAiKeyUi(true);
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '✨ Analizza Piatto con AI';
+      }
+    });
+
+    $('ai-ingredients-list').addEventListener('input', (e) => {
+      if (!uiState.aiResult) return;
+      if (e.target.classList.contains('ai-ing-grams-input')) {
+        const idx = Number(e.target.dataset.aiIdx);
+        if (uiState.aiResult.items[idx]) {
+          uiState.aiResult.items[idx].grams = Math.max(0, Number(e.target.value) || 0);
+          updateAiTotalsBanner();
+        }
+      }
+    });
+
+    $('ai-ingredients-list').addEventListener('change', (e) => {
+      if (!uiState.aiResult) return;
+      if (e.target.classList.contains('ai-ing-check')) {
+        const idx = Number(e.target.dataset.aiIdx);
+        if (uiState.aiResult.items[idx]) {
+          uiState.aiResult.items[idx].checked = e.target.checked;
+          updateAiTotalsBanner();
+        }
+      }
+    });
+
+    $('btn-confirm-ai-items').addEventListener('click', () => {
+      if (!uiState.aiResult) return;
+      const mealId = $('ai-target-meal').value || guessDefaultMeal();
+      const selected = uiState.aiResult.items.filter((it) => it.checked && it.grams > 0);
+      if (selected.length === 0) {
+        showToast('Seleziona almeno un ingrediente da aggiungere');
+        return;
+      }
+
+      for (const item of selected) {
+        storage.addFoodEntry(uiState.selectedDate, mealId, item.food, item.grams);
+      }
+
+      // Reset modal state for next scan
+      uiState.aiResult = null;
+      uiState.aiImage = null;
+      $('ai-photo-preview-wrap').classList.add('hidden');
+      $('ai-results-box').classList.add('hidden');
+      $('ai-user-hint').value = '';
+      closeModal('modal-ai-meal');
+
+      switchTab('diary');
+      showToast(`✨ Aggiunti ${selected.length} alimenti dal piatto AI!`);
+    });
+
     // Backup Export / Import / Reset
     $('btn-export-json').addEventListener('click', () => {
       const blob = new Blob([storage.exportJSON()], { type: 'application/json' });
@@ -1508,6 +1743,8 @@
       setTimeout(() => $('food-search-input').focus(), 100);
     } else if (action === 'scan') {
       openScannerModal();
+    } else if (action === 'ai') {
+      openAiMealModal();
     }
   }
 

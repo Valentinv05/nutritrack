@@ -32,6 +32,13 @@
   ],
   "shortcuts": [
     {
+      "name": "Riconosci Piatto AI",
+      "short_name": "Foto AI",
+      "description": "Fotografa un piatto per calcolare calorie e macro con Gemini AI",
+      "url": "./index.html?action=ai",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
       "name": "Aggiungi Alimento",
       "short_name": "Aggiungi",
       "description": "Registra subito un alimento nel diario di oggi",
