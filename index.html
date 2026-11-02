@@ -208,7 +208,16 @@
             </label>
           </div>
 
-          <button type="button" id="btn-toggle-pedometer" class="pedometer-live-btn">
+          <div class="gfit-bar">
+            <button type="button" id="btn-sync-gfit-quick" class="gfit-sync-btn">
+              <span id="gfit-btn-icon">❤️</span>
+              <span id="gfit-btn-label">Collega Google Fit</span>
+            </button>
+            <button type="button" id="btn-open-gfit-settings" class="gfit-gear-btn" title="Configura Google Fit" aria-label="Configura Google Fit">⚙️</button>
+          </div>
+          <div id="gfit-last-sync" class="gfit-sync-sub hidden"></div>
+
+          <button type="button" id="btn-toggle-pedometer" class="pedometer-live-btn" style="margin-top: 8px;">
             <span>▶️</span>
             <span id="pedometer-btn-label">Avvia Contapassi Live (Sensori Telefono)</span>
           </button>
@@ -468,6 +477,17 @@
              style="font-size: 0.78rem; font-weight: 700; color: var(--color-carbs); text-decoration: none;">
             🔑 Ottieni gratis una chiave API Gemini su Google AI Studio →
           </a>
+        </div>
+
+        <!-- Google Fit Card in Profile -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">❤️ Google Fit &amp; Connessione Salute</h2>
+          </div>
+          <p style="margin: 0 0 12px; font-size: 0.8rem; color: var(--text-muted);">
+            Sincronizza in automatico i passi registrati da Google Fit (smartphone e smartwatch) negli ultimi 7 giorni oppure importa al volo da screenshot / automazioni.
+          </p>
+          <button type="button" id="btn-profile-gfit" class="btn-secondary">❤️ Configura / Sincronizza Google Fit</button>
         </div>
 
         <!-- Install on Phone Card -->
@@ -982,6 +1002,93 @@
             💬 Apri Gemini ↗
           </a>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 9: GOOGLE FIT INTEGRATION ==================== -->
+  <div id="modal-google-fit" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div>
+          <h3 class="sheet-title">❤️ Collega Google Fit</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            Sincronizza automaticamente i passi di telefono e smartwatch
+          </div>
+        </div>
+        <button type="button" class="sheet-close-btn" data-close-modal="modal-google-fit">✕</button>
+      </div>
+
+      <div id="gfit-modal-status" class="ai-key-box" style="margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span id="gfit-modal-status-text" style="font-size: 0.8rem; font-weight: 700;">⚪ Non ancora collegato</span>
+        <button type="button" id="btn-disconnect-gfit" class="hidden" style="font-size: 0.74rem; color: var(--color-danger); font-weight: 700;">Disconnetti</button>
+      </div>
+
+      <!-- Direct OAuth 2.0 Google Fit Connection -->
+      <div class="form-field" style="margin-bottom: 10px;">
+        <label for="gfit-client-id-input">1. Il tuo Client ID OAuth Google Web:</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="gfit-client-id-input" class="input-control"
+                 placeholder="123456789-abc...apps.googleusercontent.com" autocomplete="off" />
+          <button type="button" id="btn-save-gfit-client" class="btn-secondary" style="width: auto; padding: 0 14px;">Salva</button>
+        </div>
+      </div>
+
+      <button type="button" id="btn-connect-sync-gfit" class="btn-primary" style="background: linear-gradient(135deg, #2563eb, #10b981);">
+        ❤️ Accedi con Google e Sincronizza (Ultimi 7 gg)
+      </button>
+
+      <button type="button" id="btn-gfit-redirect-auth" class="btn-secondary" style="margin-top: 8px; font-size: 0.78rem; min-height: 38px;">
+        ↗️ Se il popup si blocca sul telefono, accedi nella stessa scheda
+      </button>
+
+      <div id="gfit-modal-msg" class="hidden" style="margin-top: 10px; font-size: 0.8rem; text-align: center;"></div>
+
+      <details class="gfit-guide-details">
+        <summary>📖 Come creare gratis il Client ID Google (2 minuti, una sola volta)</summary>
+        <ol style="margin: 8px 0 6px; padding-left: 18px; color: var(--text-secondary);">
+          <li>Apri <a href="https://console.cloud.google.com/apis/library/fitness.googleapis.com" target="_blank" rel="noopener noreferrer" style="color: var(--color-carbs); font-weight: 700;">Google Cloud — Fitness API ↗</a>, crea/scegli un progetto e premi <strong>Abilita (Enable)</strong>.</li>
+          <li>Vai su <strong>Schermata consenso OAuth (Google Auth Platform)</strong> → scegli <em>Esterno</em> → in <strong>Utenti di test (Test users)</strong> aggiungi la tua email Gmail di Google Fit.</li>
+          <li>Vai su <strong>Credenziali → + Crea credenziali → ID client OAuth</strong> → scegli <strong>Applicazione web</strong>.</li>
+          <li>In <strong>Origini JavaScript autorizzate</strong> aggiungi l'indirizzo base dell'app e in <strong>URI di reindirizzamento autorizzati</strong> aggiungi il link completo dell'app:
+            <div style="margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap;">
+              <button type="button" id="btn-copy-origin-url" class="portion-chip" style="font-size: 0.73rem;">📋 Copia Origine JS</button>
+              <button type="button" id="btn-copy-redirect-url" class="portion-chip" style="font-size: 0.73rem;">📋 Copia URI Redirect</button>
+            </div>
+          </li>
+          <li>Copia il <strong>Client ID</strong> generato (`...apps.googleusercontent.com`) e incollalo qui sopra!</li>
+        </ol>
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px;">
+          💡 <em>Nota: Google sta gradualmente migrando Google Fit verso Connessione Salute (Health Connect). Se sul tuo account Google Cloud non compare più Fitness API, puoi usare subito le due modalità istantanee qui sotto senza alcuna configurazione Cloud!</em>
+        </div>
+      </details>
+
+      <!-- Zero-Config Option A: Screenshot AI -->
+      <div class="magic-setup-card" style="margin-top: 14px;">
+        <div style="font-weight: 800; color: var(--accent-primary); margin-bottom: 4px;">
+          📸 Alternativa Istantanea (Zero configurazione Cloud): Screenshot Google Fit
+        </div>
+        <p style="margin: 0 0 9px; color: var(--text-secondary);">
+          Fai uno screenshot della schermata di <strong>Google Fit</strong> (o Samsung Health / Salute / Smartwatch) e caricalo qui: Gemini AI leggerà i passi esatti e li salverà subito!
+        </p>
+        <label class="btn-secondary" style="cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px; font-size: 0.81rem;">
+          <span>📸 Carica Screenshot Google Fit / Salute</span>
+          <input type="file" id="gfit-screenshot-input" accept="image/*" class="hidden" />
+        </label>
+      </div>
+
+      <!-- Zero-Config Option B: Health Connect / Shortcuts Auto-Link -->
+      <div class="magic-setup-card" style="margin-top: 10px; border-color: rgba(16, 185, 129, 0.35);">
+        <div style="font-weight: 800; color: var(--color-carbs); margin-bottom: 4px;">
+          ⚡ Automazione 1-Tap (Connessione Salute Android / Comandi Rapidi iPhone)
+        </div>
+        <p style="margin: 0 0 8px; color: var(--text-secondary);">
+          Con <em>MacroDroid / Tasker</em> (Android Connessione Salute) o <em>Comandi Rapidi</em> (iPhone Salute) puoi aprire questo link passando i passi del giorno in automatico:
+        </p>
+        <button type="button" id="btn-copy-steps-webhook" class="btn-secondary" style="font-size: 0.78rem; min-height: 36px;">
+          📋 Copia Link Automatico (?auto=1&amp;steps=...)
+        </button>
       </div>
     </div>
   </div>

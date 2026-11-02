@@ -173,6 +173,139 @@
     }
   }
 
+  function syncGoogleFitUi() {
+    const st = api.getGoogleFitStatus();
+    const quickBtn = $('btn-sync-gfit-quick');
+    const btnIcon = $('gfit-btn-icon');
+    const btnLabel = $('gfit-btn-label');
+    const subEl = $('gfit-last-sync');
+
+    if (quickBtn && btnIcon && btnLabel) {
+      quickBtn.classList.toggle('connected', st.hasClientId);
+      if (st.hasClientId) {
+        btnIcon.textContent = '🔄';
+        btnLabel.textContent = 'Sincronizza Google Fit';
+      } else {
+        btnIcon.textContent = '❤️';
+        btnLabel.textContent = 'Collega Google Fit';
+      }
+    }
+
+    if (subEl) {
+      if (st.lastSyncAt > 0) {
+        const dt = new Date(st.lastSyncAt);
+        const isToday = window.formatDateKey(dt) === window.formatDateKey(new Date());
+        const timeStr = isToday
+          ? dt.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
+          : dt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        subEl.textContent = `❤️ Google Fit aggiornato (${timeStr})`;
+        subEl.classList.remove('hidden');
+      } else {
+        subEl.classList.add('hidden');
+      }
+    }
+
+    const modalStatusText = $('gfit-modal-status-text');
+    const discBtn = $('btn-disconnect-gfit');
+    if (modalStatusText) {
+      if (st.hasValidToken) {
+        modalStatusText.textContent = '🟢 Google Fit connesso (sessione attiva)';
+      } else if (st.hasClientId) {
+        modalStatusText.textContent = '🟡 Client ID salvato · Tocca per sincronizzare';
+      } else {
+        modalStatusText.textContent = '⚪ Non ancora collegato';
+      }
+    }
+    if (discBtn) {
+      discBtn.classList.toggle('hidden', !st.hasClientId && !st.hasValidToken);
+    }
+  }
+
+  function openGoogleFitModal() {
+    $('gfit-client-id-input').value = api.getGoogleFitClientId();
+    $('gfit-modal-msg').classList.add('hidden');
+    syncGoogleFitUi();
+    openModal('modal-google-fit');
+  }
+
+  let gfitSyncInFlight = false;
+  async function runGoogleFitSync({ interactive = true, silent = false } = {}) {
+    if (gfitSyncInFlight) return;
+
+    const typedClient = $('gfit-client-id-input')?.value?.trim();
+    if (typedClient && typedClient !== api.getGoogleFitClientId()) {
+      api.setGoogleFitClientId(typedClient);
+    }
+
+    const quickBtn = $('btn-sync-gfit-quick');
+    const modalBtn = $('btn-connect-sync-gfit');
+    const msgEl = $('gfit-modal-msg');
+
+    gfitSyncInFlight = true;
+    if (quickBtn) quickBtn.disabled = true;
+    if (modalBtn) {
+      modalBtn.disabled = true;
+      modalBtn.textContent = '⏳ Connessione a Google Fit in corso...';
+    }
+    if (msgEl && !silent) {
+      msgEl.classList.remove('hidden');
+      msgEl.style.color = 'var(--color-carbs)';
+      msgEl.textContent = '⏳ Lettura passi degli ultimi 7 giorni da Google Fit...';
+    }
+
+    try {
+      const res = await api.fetchGoogleFitSteps(7, { interactive });
+      for (const [dKey, fitSteps] of Object.entries(res.daysMap || {})) {
+        if (fitSteps > 0) {
+          const existing = storage.getDay(dKey).steps || 0;
+          const nextSteps = interactive ? fitSteps : Math.max(existing, fitSteps);
+          storage.setSteps(dKey, nextSteps);
+        }
+      }
+
+      if (msgEl) msgEl.classList.add('hidden');
+      syncGoogleFitUi();
+      if (uiState.activeTab === 'diary') renderDiary();
+      if (uiState.activeTab === 'stats') renderStatsTab();
+
+      if (interactive) {
+        closeModal('modal-google-fit');
+        showToast(`❤️ Google Fit sincronizzato: ${res.todaySteps.toLocaleString('it-IT')} passi oggi!`);
+      }
+    } catch (err) {
+      if (!silent) {
+        if (msgEl) {
+          msgEl.classList.remove('hidden');
+          msgEl.style.color = 'var(--color-danger)';
+          msgEl.textContent = `⚠️ ${err.message}`;
+        }
+        if (!$('modal-google-fit')?.classList.contains('open')) {
+          openGoogleFitModal();
+          if (msgEl) {
+            msgEl.classList.remove('hidden');
+            msgEl.style.color = 'var(--color-danger)';
+            msgEl.textContent = `⚠️ ${err.message}`;
+          }
+        }
+      }
+    } finally {
+      gfitSyncInFlight = false;
+      if (quickBtn) quickBtn.disabled = false;
+      if (modalBtn) {
+        modalBtn.disabled = false;
+        modalBtn.textContent = '❤️ Accedi con Google e Sincronizza (Ultimi 7 gg)';
+      }
+      syncGoogleFitUi();
+    }
+  }
+
+  function maybeAutoSyncGoogleFit() {
+    const st = api.getGoogleFitStatus();
+    if (st.hasValidToken && Date.now() - (st.lastSyncAt || 0) > 120000) {
+      runGoogleFitSync({ interactive: false, silent: true });
+    }
+  }
+
   function renderDiary() {
     renderHeaderAndDate();
     const summary = storage.getDaySummary(uiState.selectedDate);
@@ -244,6 +377,7 @@
     $('steps-km-val').textContent = `${stepsKm} km`;
     $('steps-kcal-val').textContent = `${stepsKcal} kcal`;
     $('chk-steps-burn').checked = storage.state.profile.countStepsInCalories !== false;
+    syncGoogleFitUi();
     syncPedometerButtonUi();
 
     // Water
@@ -1379,6 +1513,101 @@
       }
     });
 
+    // Google Fit Integration Events
+    $('btn-sync-gfit-quick').addEventListener('click', () => {
+      if (api.getGoogleFitStatus().hasClientId) {
+        runGoogleFitSync({ interactive: true });
+      } else {
+        openGoogleFitModal();
+      }
+    });
+
+    $('btn-open-gfit-settings').addEventListener('click', openGoogleFitModal);
+    $('btn-profile-gfit').addEventListener('click', openGoogleFitModal);
+
+    $('btn-save-gfit-client').addEventListener('click', () => {
+      const val = $('gfit-client-id-input').value.trim();
+      api.setGoogleFitClientId(val);
+      syncGoogleFitUi();
+      showToast(val ? '✅ Client ID Google Fit salvato!' : 'Client ID rimosso');
+    });
+
+    $('btn-connect-sync-gfit').addEventListener('click', () => {
+      runGoogleFitSync({ interactive: true });
+    });
+
+    $('btn-gfit-redirect-auth').addEventListener('click', () => {
+      const val = $('gfit-client-id-input').value.trim();
+      if (val) api.setGoogleFitClientId(val);
+      try {
+        api.startGoogleFitRedirectAuth();
+      } catch (err) {
+        const msgEl = $('gfit-modal-msg');
+        msgEl.classList.remove('hidden');
+        msgEl.style.color = 'var(--color-danger)';
+        msgEl.textContent = `⚠️ ${err.message}`;
+      }
+    });
+
+    $('btn-disconnect-gfit').addEventListener('click', () => {
+      if (confirm('Vuoi scollegare Google Fit da questo dispositivo? (I passi già salvati resteranno nel diario)')) {
+        api.disconnectGoogleFit(true);
+        $('gfit-client-id-input').value = '';
+        syncGoogleFitUi();
+        renderDiary();
+        showToast('Google Fit scollegato');
+      }
+    });
+
+    $('btn-copy-origin-url').addEventListener('click', () => {
+      const originUrl = window.location.protocol === 'https:'
+        ? window.location.origin
+        : 'https://valentinv05.github.io';
+      navigator.clipboard?.writeText(originUrl).then(() => showToast(`📋 Origine copiata: ${originUrl}`));
+    });
+
+    $('btn-copy-redirect-url').addEventListener('click', () => {
+      const redirectUrl = window.location.protocol === 'https:'
+        ? (window.location.origin + window.location.pathname)
+        : 'https://valentinv05.github.io/nutritrack/';
+      navigator.clipboard?.writeText(redirectUrl).then(() => showToast(`📋 URI Redirect copiato: ${redirectUrl}`));
+    });
+
+    $('btn-copy-steps-webhook').addEventListener('click', () => {
+      const base = window.location.protocol === 'https:'
+        ? window.location.href.split('?')[0].split('#')[0]
+        : 'https://valentinv05.github.io/nutritrack/';
+      const webhook = `${base}?auto=1&steps=`;
+      navigator.clipboard?.writeText(webhook).then(() => showToast('📋 Link automatico passi copiato!'));
+    });
+
+    $('gfit-screenshot-input').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+
+      const msgEl = $('gfit-modal-msg');
+      msgEl.classList.remove('hidden');
+      msgEl.style.color = 'var(--color-carbs)';
+      msgEl.textContent = '📸 Lettura passi dallo screenshot di Google Fit con Gemini AI...';
+
+      try {
+        const compressed = await api.compressImageForAi(file);
+        const result = await api.analyzeFitnessScreenshotWithGemini({
+          imageBase64: compressed.base64,
+          mimeType: compressed.mimeType
+        });
+        storage.setSteps(uiState.selectedDate, result.steps);
+        msgEl.classList.add('hidden');
+        closeModal('modal-google-fit');
+        renderDiary();
+        showToast(`📸 ${result.appName}: ${result.steps.toLocaleString('it-IT')} passi sincronizzati!`);
+      } catch (err) {
+        msgEl.style.color = 'var(--color-danger)';
+        msgEl.textContent = `⚠️ ${err.message}`;
+      }
+    });
+
     // Step Counter (Contapassi) buttons & Live Pedometer
     $('chk-steps-burn').addEventListener('change', (e) => {
       storage.state.profile.countStepsInCalories = e.target.checked;
@@ -2036,6 +2265,13 @@
   }
 
   function handleLaunchParams() {
+    // 0. OAuth 2.0 Redirect Hash Callback from Google Fit Sign-In
+    if (window.location.hash && api.consumeGoogleFitHashToken(window.location.hash)) {
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+      runGoogleFitSync({ interactive: true });
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
 
     // 1. Automatic 1-Tap Magic Link from Gemini Chat (?auto=1&m=...)
@@ -2083,6 +2319,12 @@
     renderDiary();
     registerPwaServiceWorker();
     handleLaunchParams();
+    maybeAutoSyncGoogleFit();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        maybeAutoSyncGoogleFit();
+      }
+    });
   }
 
   if (document.readyState === 'loading') {

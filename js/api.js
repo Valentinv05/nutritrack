@@ -1405,12 +1405,451 @@
     }
   }
 
+  // ===================== GOOGLE FIT INTEGRATION (OAUTH 2.0 + SCREENSHOT AI) =====================
+  const GFIT_CLIENT_ID_STORAGE = 'nutritrack_gfit_client_id_v1';
+  const GFIT_TOKEN_STORAGE = 'nutritrack_gfit_token_v1';
+  const GFIT_SCOPE = 'https://www.googleapis.com/auth/fitness.activity.read';
+  const GFIT_AGGREGATE_URL = 'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate';
+
+  let gsiLoadPromise = null;
+
+  function getGoogleFitClientId() {
+    try {
+      return (localStorage.getItem(GFIT_CLIENT_ID_STORAGE) || '').trim();
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function setGoogleFitClientId(clientId) {
+    try {
+      const clean = String(clientId || '').trim();
+      if (clean) {
+        localStorage.setItem(GFIT_CLIENT_ID_STORAGE, clean);
+      } else {
+        localStorage.removeItem(GFIT_CLIENT_ID_STORAGE);
+      }
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function getGoogleFitTokenState() {
+    try {
+      const raw = localStorage.getItem(GFIT_TOKEN_STORAGE);
+      if (!raw) return { accessToken: '', expiresAt: 0, lastSyncAt: 0 };
+      const parsed = JSON.parse(raw);
+      return {
+        accessToken: parsed.accessToken || '',
+        expiresAt: Number(parsed.expiresAt) || 0,
+        lastSyncAt: Number(parsed.lastSyncAt) || 0
+      };
+    } catch (e) {
+      return { accessToken: '', expiresAt: 0, lastSyncAt: 0 };
+    }
+  }
+
+  function saveGoogleFitToken(accessToken, expiresInSec = 3599) {
+    const prev = getGoogleFitTokenState();
+    const next = {
+      accessToken: String(accessToken || ''),
+      expiresAt: Date.now() + Math.max(60, Number(expiresInSec) || 3599) * 1000,
+      lastSyncAt: prev.lastSyncAt || 0
+    };
+    try {
+      localStorage.setItem(GFIT_TOKEN_STORAGE, JSON.stringify(next));
+    } catch (e) {}
+    return next;
+  }
+
+  function markGoogleFitSynced() {
+    const prev = getGoogleFitTokenState();
+    prev.lastSyncAt = Date.now();
+    try {
+      localStorage.setItem(GFIT_TOKEN_STORAGE, JSON.stringify(prev));
+    } catch (e) {}
+    return prev.lastSyncAt;
+  }
+
+  function clearGoogleFitAccessTokenOnly() {
+    const prev = getGoogleFitTokenState();
+    try {
+      localStorage.setItem(GFIT_TOKEN_STORAGE, JSON.stringify({
+        accessToken: '',
+        expiresAt: 0,
+        lastSyncAt: prev.lastSyncAt || 0
+      }));
+    } catch (e) {}
+  }
+
+  function disconnectGoogleFit(clearClientId = false) {
+    const prev = getGoogleFitTokenState();
+    if (prev.accessToken && window.google?.accounts?.oauth2?.revoke) {
+      try {
+        window.google.accounts.oauth2.revoke(prev.accessToken, () => {});
+      } catch (e) {}
+    }
+    try {
+      localStorage.removeItem(GFIT_TOKEN_STORAGE);
+      if (clearClientId) localStorage.removeItem(GFIT_CLIENT_ID_STORAGE);
+    } catch (e) {}
+  }
+
+  function getGoogleFitStatus() {
+    const clientId = getGoogleFitClientId();
+    const tok = getGoogleFitTokenState();
+    const hasValidToken = Boolean(tok.accessToken && tok.expiresAt && Date.now() < tok.expiresAt - 30000);
+    return {
+      hasClientId: Boolean(clientId),
+      clientId,
+      hasValidToken,
+      lastSyncAt: tok.lastSyncAt || 0,
+      expiresAt: tok.expiresAt || 0
+    };
+  }
+
+  function loadGoogleIdentityScript() {
+    if (window.google?.accounts?.oauth2) {
+      return Promise.resolve();
+    }
+    if (gsiLoadPromise) return gsiLoadPromise;
+
+    gsiLoadPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      const timer = setTimeout(() => {
+        gsiLoadPromise = null;
+        reject(new Error('Timeout caricamento Google Sign-In. Controlla la connessione internet o eventuali blocchi pubblicitari.'));
+      }, 10000);
+
+      script.onload = () => {
+        clearTimeout(timer);
+        if (window.google?.accounts?.oauth2) {
+          resolve();
+        } else {
+          gsiLoadPromise = null;
+          reject(new Error('Libreria Google Identity non disponibile su questo browser.'));
+        }
+      };
+      script.onerror = () => {
+        clearTimeout(timer);
+        gsiLoadPromise = null;
+        reject(new Error('Impossibile contattare accounts.google.com. Verifica la connessione internet.'));
+      };
+      document.head.appendChild(script);
+    });
+
+    return gsiLoadPromise;
+  }
+
+  async function requestGoogleFitToken({ interactive = true } = {}) {
+    const status = getGoogleFitStatus();
+    if (status.hasValidToken) {
+      return getGoogleFitTokenState().accessToken;
+    }
+    if (!interactive) {
+      throw new Error('Sessione Google Fit scaduta.');
+    }
+
+    const clientId = status.clientId;
+    if (!clientId || !clientId.includes('.apps.googleusercontent.com')) {
+      throw new Error('Inserisci prima un Client ID OAuth Google valido (termina con .apps.googleusercontent.com).');
+    }
+
+    await loadGoogleIdentityScript();
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      try {
+        const tokenClient = window.google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: GFIT_SCOPE,
+          callback: (resp) => {
+            if (settled) return;
+            settled = true;
+            if (resp && resp.error) {
+              reject(new Error(`Errore accesso Google (${resp.error}). Verifica che la tua email sia tra gli "Utenti di test" nel progetto Google Cloud.`));
+              return;
+            }
+            if (!resp || !resp.access_token) {
+              reject(new Error('Nessun token ricevuto da Google.'));
+              return;
+            }
+            saveGoogleFitToken(resp.access_token, Number(resp.expires_in) || 3599);
+            resolve(resp.access_token);
+          },
+          error_callback: (err) => {
+            if (settled) return;
+            settled = true;
+            const errType = err?.type || 'errore_popup';
+            if (errType === 'popup_failed_to_open') {
+              reject(new Error('Il browser ha bloccato il popup di accesso Google. Tocca "Accedi senza popup (Redirect)" qui sotto!'));
+            } else if (errType === 'popup_closed') {
+              reject(new Error('Finestra di accesso Google chiusa prima del completamento.'));
+            } else {
+              reject(new Error(`Impossibile aprire Google Sign-In (${errType}). Prova il pulsante "Accedi senza popup".`));
+            }
+          }
+        });
+        tokenClient.requestAccessToken({ prompt: '' });
+      } catch (err) {
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
+      }
+    });
+  }
+
+  function startGoogleFitRedirectAuth() {
+    const clientId = getGoogleFitClientId();
+    if (!clientId || !clientId.includes('.apps.googleusercontent.com')) {
+      throw new Error('Inserisci prima un Client ID OAuth Google valido (termina con .apps.googleusercontent.com).');
+    }
+    const redirectUri = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'token',
+      scope: GFIT_SCOPE,
+      include_granted_scopes: 'true',
+      prompt: 'consent',
+      state: 'gfit_sync'
+    });
+    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+  }
+
+  function consumeGoogleFitHashToken(hashString) {
+    const raw = String(hashString || '').replace(/^#/, '');
+    if (!raw || !raw.includes('access_token=')) return false;
+    const params = new URLSearchParams(raw);
+    if (params.get('state') !== 'gfit_sync') return false;
+    const token = params.get('access_token');
+    if (!token) return false;
+    const expiresIn = Number(params.get('expires_in')) || 3599;
+    saveGoogleFitToken(token, expiresIn);
+    return true;
+  }
+
+  async function queryGoogleFitAggregate(accessToken, startTimeMillis, endTimeMillis, timeZoneId, useEstimatedStream) {
+    const aggregateItem = useEstimatedStream
+      ? {
+          dataTypeName: 'com.google.step_count.delta',
+          dataSourceId: 'derived:com.google.step_count.delta:com.google.android.gms:estimated_steps'
+        }
+      : {
+          dataTypeName: 'com.google.step_count.delta'
+        };
+
+    const body = {
+      aggregateBy: [aggregateItem],
+      bucketByTime: {
+        period: {
+          type: 'day',
+          value: 1,
+          timeZoneId
+        }
+      },
+      startTimeMillis,
+      endTimeMillis
+    };
+
+    const res = await fetch(GFIT_AGGREGATE_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    });
+
+    const data = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, data };
+  }
+
+  function extractStepsMapFromBuckets(buckets) {
+    const daysMap = {};
+    let totalAll = 0;
+
+    for (const bucket of buckets || []) {
+      const startMs = Number(bucket.startTimeMillis);
+      if (!Number.isFinite(startMs)) continue;
+      const dKey = window.formatDateKey(new Date(startMs));
+      let daySteps = 0;
+
+      for (const ds of bucket.dataset || []) {
+        for (const pt of ds.point || []) {
+          for (const val of pt.value || []) {
+            if (typeof val.intVal === 'number') {
+              daySteps += val.intVal;
+            } else if (typeof val.fpVal === 'number') {
+              daySteps += Math.round(val.fpVal);
+            }
+          }
+        }
+      }
+
+      daysMap[dKey] = (daysMap[dKey] || 0) + Math.max(0, Math.round(daySteps));
+      totalAll += daysMap[dKey];
+    }
+
+    return { daysMap, totalAll };
+  }
+
+  async function fetchGoogleFitSteps(daysCount = 7, { interactive = true } = {}) {
+    let accessToken = await requestGoogleFitToken({ interactive });
+
+    const now = new Date();
+    const startDt = new Date(now.getFullYear(), now.getMonth(), now.getDate() - Math.max(0, daysCount - 1), 0, 0, 0, 0);
+    const startTimeMillis = startDt.getTime();
+    const endTimeMillis = now.getTime();
+    const timeZoneId = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/Rome';
+
+    let resp = await queryGoogleFitAggregate(accessToken, startTimeMillis, endTimeMillis, timeZoneId, true);
+
+    // Retry once if token was revoked server-side before expiry
+    if (resp.status === 401) {
+      clearGoogleFitAccessTokenOnly();
+      if (!interactive) throw new Error('Token Google Fit scaduto.');
+      accessToken = await requestGoogleFitToken({ interactive: true });
+      resp = await queryGoogleFitAggregate(accessToken, startTimeMillis, endTimeMillis, timeZoneId, true);
+    }
+
+    if (resp.status === 403) {
+      const apiMsg = resp.data?.error?.message || '';
+      throw new Error(
+        `Accesso negato dall'API Fitness Google (403). Assicurati di aver abilitato "Fitness API" su Google Cloud Console e spuntato il permesso attività fisica durante il login. ${apiMsg}`
+      );
+    }
+
+    let parsed = resp.ok ? extractStepsMapFromBuckets(resp.data?.bucket) : { daysMap: {}, totalAll: 0 };
+
+    // Fallback to generic step_count.delta if GMS estimated_steps stream is unavailable or empty (e.g. iOS / external wearable)
+    if (!resp.ok || parsed.totalAll === 0) {
+      const fallbackResp = await queryGoogleFitAggregate(accessToken, startTimeMillis, endTimeMillis, timeZoneId, false);
+      if (fallbackResp.ok) {
+        const fbParsed = extractStepsMapFromBuckets(fallbackResp.data?.bucket);
+        if (fbParsed.totalAll > parsed.totalAll || !resp.ok) {
+          parsed = fbParsed;
+          resp = fallbackResp;
+        }
+      }
+    }
+
+    if (!resp.ok) {
+      throw new Error(resp.data?.error?.message || `Errore Google Fit API (HTTP ${resp.status})`);
+    }
+
+    const lastSyncAt = markGoogleFitSynced();
+    const todayKey = window.formatDateKey(now);
+    const todaySteps = parsed.daysMap[todayKey] || 0;
+
+    return {
+      daysMap: parsed.daysMap,
+      todaySteps,
+      syncedDays: Object.keys(parsed.daysMap).length,
+      lastSyncAt
+    };
+  }
+
+  const FITNESS_SCREENSHOT_SCHEMA = {
+    type: 'object',
+    properties: {
+      app_name: {
+        type: 'string',
+        description: 'Nome dell\'app fitness riconosciuta nello screenshot (es. Google Fit, Connessione Salute, Samsung Health, Apple Salute, Garmin, Zepp).'
+      },
+      steps: {
+        type: 'number',
+        description: 'Numero totale di passi letti nello screenshot. 0 se non visibili.'
+      },
+      summary_note: {
+        type: 'string',
+        description: 'Breve conferma in italiano dei dati letti dallo screenshot.'
+      }
+    },
+    required: ['app_name', 'steps', 'summary_note']
+  };
+
+  async function analyzeFitnessScreenshotWithGemini({ imageBase64, mimeType }) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      throw new Error('Inserisci prima la tua chiave API Gemini gratuita (nella scheda Profilo o in Foto AI) per leggere gli screenshot in automatico!');
+    }
+    if (!imageBase64) {
+      throw new Error('Seleziona uno screenshot di Google Fit o della tua app Salute.');
+    }
+
+    const res = await fetch(GEMINI_INTERACTIONS_URL, {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Api-Revision': '2026-05-20'
+      },
+      body: JSON.stringify({
+        model: GEMINI_MODEL,
+        store: false,
+        system_instruction:
+          'Sei un lettore ottico preciso per schermate di app fitness (Google Fit, Health Connect, Samsung Health, Apple Salute, Zepp, Garmin, Fitbit). Leggi con esattezza il numero totale di passi giornalieri mostrati nello screenshot.',
+        input: [
+          { type: 'image', data: imageBase64, mime_type: mimeType || 'image/jpeg' },
+          { type: 'text', text: 'Leggi il numero totale di passi giornalieri mostrati in questa schermata di Google Fit / Salute.' }
+        ],
+        response_format: {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: FITNESS_SCREENSHOT_SCHEMA
+        }
+      })
+    });
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.error?.message || `Errore Gemini AI (HTTP ${res.status})`);
+    }
+
+    let outputText = typeof data?.output_text === 'string' ? data.output_text : '';
+    if (!outputText && Array.isArray(data?.steps)) {
+      for (let i = data.steps.length - 1; i >= 0; i--) {
+        const step = data.steps[i];
+        if (step?.type === 'model_output' && Array.isArray(step.content)) {
+          outputText = step.content.filter((p) => p?.type === 'text').map((p) => p.text).join('');
+          if (outputText) break;
+        }
+      }
+    }
+
+    const parsed = JSON.parse(outputText || '{}');
+    const steps = Math.max(0, Math.round(num(parsed.steps, 0)));
+    if (steps <= 0) {
+      throw new Error('Nessun conteggio passi visibile nello screenshot selezionato.');
+    }
+
+    return {
+      appName: String(parsed.app_name || 'Google Fit').trim(),
+      steps,
+      summaryNote: String(parsed.summary_note || '')
+    };
+  }
+
   window.nutriApi = {
     searchOpenFoodFacts,
     lookupBarcode,
     detectBarcodeFromImageFile,
     LiveBarcodeScanner,
     LiveStepCounter,
+    getGoogleFitClientId,
+    setGoogleFitClientId,
+    getGoogleFitStatus,
+    disconnectGoogleFit,
+    startGoogleFitRedirectAuth,
+    consumeGoogleFitHashToken,
+    fetchGoogleFitSteps,
+    analyzeFitnessScreenshotWithGemini,
     getGeminiApiKey,
     setGeminiApiKey,
     compressImageForAi,
