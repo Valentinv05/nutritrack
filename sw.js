@@ -1,4 +1,4 @@
-const CACHE_NAME = 'nutritrack-v4';
+const CACHE_NAME = 'nutritrack-v5';
 const APP_ASSETS = [
   './',
   './index.html',
@@ -60,20 +60,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-first with background refresh (stale-while-revalidate) for app shell
+  // Network-first with fast cache fallback so updates appear immediately when online,
+  // while still working 100% offline!
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const networkFetch = fetch(request)
-        .then((res) => {
-          if (res && res.status === 200 && res.type === 'basic') {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return res;
-        })
-        .catch(() => cached);
-
-      return cached || networkFetch;
-    })
+    fetch(request)
+      .then((res) => {
+        if (res && res.status === 200 && res.type === 'basic') {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(request))
   );
 });
