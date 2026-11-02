@@ -1,0 +1,49 @@
+{
+  "name": "NutriTrack — Diario Alimentare & Macro",
+  "short_name": "NutriTrack",
+  "description": "Tieni traccia di pasti, calorie, macronutrienti, fibre, acqua e peso ogni giorno, anche offline.",
+  "lang": "it-IT",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1120",
+  "theme_color": "#0b1120",
+  "categories": ["health", "fitness", "food", "lifestyle"],
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Aggiungi Alimento",
+      "short_name": "Aggiungi",
+      "description": "Registra subito un alimento nel diario di oggi",
+      "url": "./index.html?action=add",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Scansiona Codice a Barre",
+      "short_name": "Scanner",
+      "description": "Scansiona un prodotto con la fotocamera",
+      "url": "./index.html?action=scan",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

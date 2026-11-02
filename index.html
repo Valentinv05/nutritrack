@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="it" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1120" id="meta-theme-color" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NutriTrack" />
+  <meta name="description" content="Diario alimentare completo per monitorare calorie, macronutrienti, fibre, acqua e peso ogni giorno." />
+
+  <title>NutriTrack — Diario Calorie &amp; Macronutrienti</title>
+
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
+  <div class="app-shell">
+    <!-- ==================== TOP HEADER ==================== -->
+    <header class="top-bar">
+      <div class="brand-group">
+        <img src="./icons/icon.svg" alt="NutriTrack" class="brand-logo" />
+        <div>
+          <h1 class="brand-title">NutriTrack</h1>
+        </div>
+        <span id="streak-badge" class="streak-badge" title="Giorni consecutivi tracciati">🔥 0 gg</span>
+      </div>
+
+      <div class="top-actions">
+        <button type="button" id="btn-open-install" class="chip-btn" title="Usa o installa sul telefono">
+          <span>📱</span><span>Telefono</span>
+        </button>
+        <button type="button" id="btn-toggle-theme" class="icon-btn" aria-label="Cambia tema chiaro/scuro" title="Cambia tema">
+          🌙
+        </button>
+      </div>
+    </header>
+
+    <!-- ==================== DATE BAR ==================== -->
+    <div id="date-nav-bar" class="date-nav-bar">
+      <button type="button" id="btn-prev-day" class="date-arrow-btn" aria-label="Giorno precedente">‹</button>
+
+      <div class="date-center-wrap">
+        <div class="date-display-btn" title="Scegli data dal calendario">
+          <span id="current-date-label" class="date-main-label">Oggi</span>
+          <span id="current-date-sub" class="date-sub-label"></span>
+          <input type="date" id="date-picker-input" class="hidden-date-input" aria-label="Seleziona data" />
+        </div>
+        <button type="button" id="btn-today-jump" class="today-jump-btn hidden">Torna a Oggi</button>
+      </div>
+
+      <button type="button" id="btn-next-day" class="date-arrow-btn" aria-label="Giorno successivo">›</button>
+    </div>
+
+    <!-- ==================== MAIN CONTENT ==================== -->
+    <main class="main-content">
+
+      <!-- ==================== TAB 1: DIARIO ==================== -->
+      <section id="view-diary" class="tab-view active">
+        <!-- Calorie & Macro Summary Card -->
+        <div class="card">
+          <div class="hero-ring-row">
+            <div class="hero-side-stat">
+              <span class="hero-side-label">Assunte</span>
+              <span id="stat-eaten-kcal" class="hero-side-val">0</span>
+              <span class="hero-side-sub">kcal</span>
+            </div>
+
+            <div class="ring-wrapper">
+              <svg class="ring-svg" viewBox="0 0 146 146">
+                <circle class="ring-track" cx="73" cy="73" r="61"></circle>
+                <circle id="ring-progress-circle" class="ring-progress" cx="73" cy="73" r="61"
+                        stroke-dasharray="383.27" stroke-dashoffset="383.27"></circle>
+              </svg>
+              <div class="ring-center-text">
+                <span id="stat-remaining-kcal" class="ring-kcal-big">2000</span>
+                <span id="stat-remaining-label" class="ring-kcal-label">kcal rimanenti</span>
+                <span id="stat-budget-pill" class="ring-budget-pill">Budget 2000</span>
+              </div>
+            </div>
+
+            <div class="hero-side-stat">
+              <span class="hero-side-label">Bruciate</span>
+              <span id="stat-burned-kcal" class="hero-side-val" style="color: var(--color-burn);">0</span>
+              <span class="hero-side-sub">kcal sport</span>
+            </div>
+          </div>
+
+          <!-- Primary Macros -->
+          <div class="macro-grid">
+            <div class="macro-box">
+              <div class="macro-box-top">
+                <span style="color: var(--color-carbs);">Carboidrati</span>
+                <span id="macro-carbs-pct" style="color: var(--text-muted);">0%</span>
+              </div>
+              <div id="macro-carbs-val" class="macro-box-vals">0 <span>/ 240g</span></div>
+              <div class="progress-track">
+                <div id="macro-carbs-bar" class="progress-fill fill-carbs"></div>
+              </div>
+            </div>
+
+            <div class="macro-box">
+              <div class="macro-box-top">
+                <span style="color: var(--color-protein);">Proteine</span>
+                <span id="macro-protein-pct" style="color: var(--text-muted);">0%</span>
+              </div>
+              <div id="macro-protein-val" class="macro-box-vals">0 <span>/ 125g</span></div>
+              <div class="progress-track">
+                <div id="macro-protein-bar" class="progress-fill fill-protein"></div>
+              </div>
+            </div>
+
+            <div class="macro-box">
+              <div class="macro-box-top">
+                <span style="color: var(--color-fat);">Grassi</span>
+                <span id="macro-fat-pct" style="color: var(--text-muted);">0%</span>
+              </div>
+              <div id="macro-fat-val" class="macro-box-vals">0 <span>/ 60g</span></div>
+              <div class="progress-track">
+                <div id="macro-fat-bar" class="progress-fill fill-fat"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expandable Micronutrients -->
+          <button type="button" id="btn-toggle-micros" class="micros-toggle-btn">
+            <span>Dettagli nutrienti (Fibre, Zuccheri, Saturi, Sodio)</span>
+            <span id="micros-chevron">▾</span>
+          </button>
+
+          <div id="micros-panel" class="micros-panel">
+            <div class="micro-item">
+              <div class="micro-row"><span>🌾 Fibre</span><strong id="micro-fiber-val">0 / 28 g</strong></div>
+              <div class="progress-track"><div id="micro-fiber-bar" class="progress-fill fill-protein"></div></div>
+            </div>
+            <div class="micro-item">
+              <div class="micro-row"><span>🍬 Zuccheri</span><strong id="micro-sugars-val">0 / 50 g</strong></div>
+              <div class="progress-track"><div id="micro-sugars-bar" class="progress-fill fill-carbs"></div></div>
+            </div>
+            <div class="micro-item">
+              <div class="micro-row"><span>🧈 Grassi saturi</span><strong id="micro-satfat-val">0 / 22 g</strong></div>
+              <div class="progress-track"><div id="micro-satfat-bar" class="progress-fill fill-fat"></div></div>
+            </div>
+            <div class="micro-item">
+              <div class="micro-row"><span>🧂 Sodio</span><strong id="micro-sodium-val">0 / 2000 mg</strong></div>
+              <div class="progress-track"><div id="micro-sodium-bar" class="progress-fill fill-water"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-strip">
+          <button type="button" id="btn-diary-search" class="quick-action-card">
+            <span class="quick-action-icon">🔍</span>
+            <span>Cerca Cibo</span>
+          </button>
+          <button type="button" id="btn-diary-scan" class="quick-action-card">
+            <span class="quick-action-icon">📷</span>
+            <span>Scanner EAN</span>
+          </button>
+          <button type="button" id="btn-diary-quick" class="quick-action-card">
+            <span class="quick-action-icon">⚡</span>
+            <span>Kcal Rapide</span>
+          </button>
+        </div>
+
+        <!-- Water Tracker -->
+        <div class="card">
+          <div class="card-header" style="margin-bottom: 8px;">
+            <h2 class="card-title">💧 Idratazione</h2>
+            <strong id="water-summary-text" style="font-size: 0.86rem; color: var(--color-water);">0 / 2400 ml</strong>
+          </div>
+          <div class="progress-track" style="height: 8px;">
+            <div id="water-progress-bar" class="progress-fill fill-water"></div>
+          </div>
+          <div class="water-controls">
+            <button type="button" id="btn-water-minus" class="water-btn secondary" title="Rimuovi 200 ml">−200</button>
+            <button type="button" id="btn-water-200" class="water-btn">+200 ml 🥛</button>
+            <button type="button" id="btn-water-500" class="water-btn">+500 ml 🍼</button>
+          </div>
+        </div>
+
+        <!-- Meals Stack -->
+        <div id="meals-container" class="meals-stack"></div>
+
+        <!-- Physical Activity / Burned Calories -->
+        <div class="card">
+          <div class="card-header" style="margin-bottom: 8px;">
+            <h2 class="card-title">🏃 Attività Fisica &amp; Sport</h2>
+            <button type="button" id="btn-add-activity" class="btn-meal-add">+ Aggiungi</button>
+          </div>
+          <div id="activities-list"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 2: ALIMENTI ==================== -->
+      <section id="view-foods" class="tab-view">
+        <div class="foods-sticky-top">
+          <div class="target-meal-bar">
+            <span>Aggiungi al pasto:</span>
+            <select id="foods-target-meal" class="target-meal-select" aria-label="Pasto di destinazione">
+              <option value="colazione">☀️ Colazione</option>
+              <option value="pranzo">🍝 Pranzo</option>
+              <option value="cena">🌙 Cena</option>
+              <option value="spuntini">🍎 Spuntini</option>
+            </select>
+          </div>
+
+          <div class="search-box-row">
+            <div class="search-input-wrap">
+              <span class="search-icon-left">🔍</span>
+              <input type="search" id="food-search-input" class="search-input"
+                     placeholder="Cerca alimento o marca (es. pasta, skyr...)" autocomplete="off" />
+              <button type="button" id="btn-clear-search" class="search-clear-btn" aria-label="Cancella ricerca">✕</button>
+            </div>
+            <button type="button" id="btn-foods-scan" class="scan-square-btn" title="Scansiona codice a barre">📷</button>
+          </div>
+
+          <div id="food-source-tabs" class="source-tabs">
+            <button type="button" class="source-tab active" data-source="local">🇮🇹 Database</button>
+            <button type="button" class="source-tab" data-source="favorites">⭐ Preferiti</button>
+            <button type="button" class="source-tab" data-source="recent">🕒 Recenti</button>
+            <button type="button" class="source-tab" data-source="custom">👤 Miei Cibi</button>
+            <button type="button" class="source-tab" data-source="online">🌐 Online (Supermercato)</button>
+          </div>
+
+          <div id="food-category-chips" class="category-chips"></div>
+
+          <div class="foods-toolbar-row">
+            <button type="button" id="btn-new-custom-food" class="btn-outline-sm">➕ Crea Alimento Personalizzato</button>
+          </div>
+        </div>
+
+        <div id="foods-list-container" class="foods-list"></div>
+      </section>
+
+      <!-- ==================== TAB 3: STATISTICHE & PESO ==================== -->
+      <section id="view-stats" class="tab-view">
+        <div class="segmented-control">
+          <button type="button" id="stats-range-7" class="seg-btn active" data-days="7">Ultimi 7 giorni</button>
+          <button type="button" id="stats-range-14" class="seg-btn" data-days="14">Ultimi 14 giorni</button>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Media Calorie (gg attivi)</div>
+            <div id="kpi-avg-kcal" class="kpi-value">0 kcal</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Media Proteine</div>
+            <div id="kpi-avg-protein" class="kpi-value" style="color: var(--color-protein);">0 g</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Giorni Tracciati</div>
+            <div id="kpi-logged-days" class="kpi-value">0 / 7</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Serie Attiva</div>
+            <div id="kpi-streak" class="kpi-value" style="color: #fb923c;">🔥 0 gg</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📊 Andamento Calorie</h2>
+          </div>
+          <div id="chart-weekly-calories"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🥗 Ripartizione Macronutrienti</h2>
+          </div>
+          <div id="chart-macro-donut"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">⚖️ Peso Corporeo &amp; IMC</h2>
+            <span id="bmi-badge" class="streak-badge" style="background: rgba(56, 189, 248, 0.14); color: var(--color-carbs); border-color: rgba(56, 189, 248, 0.3);">IMC --</span>
+          </div>
+
+          <form id="form-log-weight" class="weight-form-row">
+            <input type="number" id="weight-input-kg" class="input-control" step="0.1" min="25" max="350"
+                   inputmode="decimal" placeholder="Peso di oggi (kg)" required />
+            <button type="submit" class="btn-primary" style="width: auto; min-height: 42px; padding: 0 18px; white-space: nowrap;">
+              Salva Peso
+            </button>
+          </form>
+
+          <div id="weight-progress-row" class="weight-summary-pills"></div>
+          <div id="chart-weight-trend"></div>
+        </div>
+      </section>
+
+      <!-- ==================== TAB 4: OBIETTIVI & PROFILO ==================== -->
+      <section id="view-profile" class="tab-view">
+        <form id="form-profile" class="card">
+          <div class="card-header">
+            <h2 class="card-title">🎯 Calcolo Fabbisogno &amp; Obiettivi</h2>
+          </div>
+
+          <div class="form-grid-2">
+            <div class="form-field">
+              <label for="prof-sex">Sesso biologico</label>
+              <select id="prof-sex" class="input-control">
+                <option value="M">Uomo</option>
+                <option value="F">Donna</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="prof-age">Età (anni)</label>
+              <input type="number" id="prof-age" class="input-control" min="14" max="100" inputmode="numeric" />
+            </div>
+            <div class="form-field">
+              <label for="prof-height">Altezza (cm)</label>
+              <input type="number" id="prof-height" class="input-control" min="120" max="230" inputmode="numeric" />
+            </div>
+            <div class="form-field">
+              <label for="prof-weight">Peso attuale (kg)</label>
+              <input type="number" id="prof-weight" class="input-control" step="0.1" min="30" max="300" inputmode="decimal" />
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="prof-target-weight">Peso obiettivo (kg)</label>
+            <input type="number" id="prof-target-weight" class="input-control" step="0.1" min="30" max="300" inputmode="decimal" />
+          </div>
+
+          <div class="form-field">
+            <label for="prof-activity">Livello di attività quotidiana</label>
+            <select id="prof-activity" class="input-control"></select>
+          </div>
+
+          <div class="form-field">
+            <label for="prof-goal">Obiettivo</label>
+            <select id="prof-goal" class="input-control"></select>
+          </div>
+
+          <div class="form-field">
+            <label for="prof-preset">Ripartizione Macronutrienti</label>
+            <select id="prof-preset" class="input-control"></select>
+          </div>
+
+          <div id="tdee-preview-box" class="tdee-preview-box"></div>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="prof-auto-targets" checked />
+            <span>Calcola automaticamente calorie, macro e acqua</span>
+          </label>
+
+          <div id="manual-targets-panel" class="hidden">
+            <div class="form-grid-2">
+              <div class="form-field">
+                <label for="target-kcal">Calorie (kcal)</label>
+                <input type="number" id="target-kcal" class="input-control" min="800" max="8000" inputmode="numeric" />
+              </div>
+              <div class="form-field">
+                <label for="target-water">Acqua (ml)</label>
+                <input type="number" id="target-water" class="input-control" step="100" min="500" max="6000" inputmode="numeric" />
+              </div>
+              <div class="form-field">
+                <label for="target-carbs">Carboidrati (g)</label>
+                <input type="number" id="target-carbs" class="input-control" min="0" max="1000" inputmode="numeric" />
+              </div>
+              <div class="form-field">
+                <label for="target-protein">Proteine (g)</label>
+                <input type="number" id="target-protein" class="input-control" min="10" max="500" inputmode="numeric" />
+              </div>
+              <div class="form-field">
+                <label for="target-fat">Grassi (g)</label>
+                <input type="number" id="target-fat" class="input-control" min="10" max="400" inputmode="numeric" />
+              </div>
+              <div class="form-field">
+                <label for="target-fiber">Fibre (g)</label>
+                <input type="number" id="target-fiber" class="input-control" min="5" max="100" inputmode="numeric" />
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-primary">💾 Salva Profilo e Obiettivi</button>
+        </form>
+
+        <!-- Install on Phone Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">📱 Usa NutriTrack sul Telefono</h2>
+          </div>
+          <p style="margin: 0 0 12px; font-size: 0.82rem; color: var(--text-muted);">
+            Apri l'app sul tuo smartphone tramite QR Code Wi-Fi oppure aggiungila alla schermata Home (Android e iPhone) per usarla a tutto schermo anche offline.
+          </p>
+          <button type="button" id="btn-profile-install" class="btn-secondary">📲 Mostra QR Code &amp; Istruzioni Telefono</button>
+        </div>
+
+        <!-- Backup & Restore Card -->
+        <div class="card">
+          <div class="card-header">
+            <h2 class="card-title">🔐 Backup &amp; Dati Locali</h2>
+          </div>
+          <p style="margin: 0 0 12px; font-size: 0.8rem; color: var(--text-muted);">
+            Tutti i tuoi pasti e progressi vengono salvati privatamente nella memoria del dispositivo. Esporta un file JSON per fare un backup o trasferire i dati tra PC e telefono.
+          </p>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button type="button" id="btn-export-json" class="btn-secondary">⬇️ Esporta Backup (.json)</button>
+            <button type="button" id="btn-import-json" class="btn-secondary">⬆️ Importa Backup (.json)</button>
+            <input type="file" id="import-json-input" class="hidden" accept=".json,application/json" />
+            <button type="button" id="btn-reset-all" class="btn-danger-outline" style="margin-top: 6px;">🗑️ Azzera tutti i dati</button>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ==================== BOTTOM NAVIGATION ==================== -->
+    <nav class="bottom-nav" aria-label="Navigazione principale">
+      <button type="button" class="nav-item active" data-tab="diary">
+        <span class="nav-icon">📒</span>
+        <span>Diario</span>
+      </button>
+      <button type="button" class="nav-item" data-tab="foods">
+        <span class="nav-icon">🥗</span>
+        <span>Alimenti</span>
+      </button>
+      <button type="button" id="btn-fab-add" class="nav-fab" aria-label="Aggiungi alimento rapido" title="Aggiungi alimento">+</button>
+      <button type="button" class="nav-item" data-tab="stats">
+        <span class="nav-icon">📊</span>
+        <span>Statistiche</span>
+      </button>
+      <button type="button" class="nav-item" data-tab="profile">
+        <span class="nav-icon">🎯</span>
+        <span>Obiettivi</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ==================== MODAL 1: ADD / EDIT FOOD PORTION ==================== -->
+  <div id="modal-food" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div style="min-width: 0; flex: 1;">
+          <h3 id="modal-food-title" class="sheet-title">Alimento</h3>
+          <div id="modal-food-brand" style="font-size: 0.78rem; color: var(--text-muted); margin-top: 2px;"></div>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button type="button" id="modal-food-fav" class="icon-btn" title="Aggiungi/rimuovi dai preferiti">☆</button>
+          <button type="button" class="sheet-close-btn" data-close-modal="modal-food">✕</button>
+        </div>
+      </div>
+
+      <form id="form-modal-food">
+        <div class="form-field" id="modal-food-meal-wrap">
+          <label for="modal-food-meal">Pasto</label>
+          <select id="modal-food-meal" class="input-control">
+            <option value="colazione">☀️ Colazione</option>
+            <option value="pranzo">🍝 Pranzo</option>
+            <option value="cena">🌙 Cena</option>
+            <option value="spuntini">🍎 Spuntini</option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="modal-food-grams">Quantità (grammi o ml)</label>
+          <div class="grams-stepper-row">
+            <button type="button" id="btn-grams-minus" class="stepper-btn">−10</button>
+            <input type="number" id="modal-food-grams" class="input-control" step="1" min="1" max="5000"
+                   inputmode="decimal" style="text-align: center; font-weight: 800; font-size: 1.08rem;" required />
+            <button type="button" id="btn-grams-plus" class="stepper-btn">+10</button>
+          </div>
+        </div>
+
+        <div id="modal-portion-chips" class="portion-chips"></div>
+
+        <div class="nutrition-preview-card">
+          <div class="preview-macros-row">
+            <div>
+              <span id="preview-kcal" class="preview-macro-num">0</span>
+              <span class="preview-macro-lbl">kcal</span>
+            </div>
+            <div>
+              <span id="preview-carbs" class="preview-macro-num" style="color: var(--color-carbs);">0g</span>
+              <span class="preview-macro-lbl">Carbo</span>
+            </div>
+            <div>
+              <span id="preview-protein" class="preview-macro-num" style="color: var(--color-protein);">0g</span>
+              <span class="preview-macro-lbl">Proteine</span>
+            </div>
+            <div>
+              <span id="preview-fat" class="preview-macro-num" style="color: var(--color-fat);">0g</span>
+              <span class="preview-macro-lbl">Grassi</span>
+            </div>
+          </div>
+          <div class="preview-micros-row">
+            <div>Zuccheri: <strong id="preview-sugars">0 g</strong></div>
+            <div>Grassi saturi: <strong id="preview-satfat">0 g</strong></div>
+            <div>Fibre: <strong id="preview-fiber">0 g</strong></div>
+            <div>Sodio: <strong id="preview-sodium">0 mg</strong></div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px;">
+          <button type="button" id="btn-delete-entry" class="btn-danger-outline hidden" style="flex: 0 0 auto; width: auto; padding: 0 16px;">
+            🗑️ Elimina
+          </button>
+          <button type="submit" id="btn-confirm-food" class="btn-primary">Aggiungi al Diario</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 2: QUICK ADD CALORIES ==================== -->
+  <div id="modal-quick" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 class="sheet-title">⚡ Aggiunta Rapida Calorie &amp; Macro</h3>
+        <button type="button" class="sheet-close-btn" data-close-modal="modal-quick">✕</button>
+      </div>
+      <form id="form-quick-add">
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="quick-meal">Pasto</label>
+            <select id="quick-meal" class="input-control">
+              <option value="colazione">☀️ Colazione</option>
+              <option value="pranzo">🍝 Pranzo</option>
+              <option value="cena">🌙 Cena</option>
+              <option value="spuntini">🍎 Spuntini</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="quick-kcal">Calorie (kcal) *</label>
+            <input type="number" id="quick-kcal" class="input-control" min="1" max="5000" inputmode="numeric" placeholder="Es. 450" required />
+          </div>
+        </div>
+        <div class="form-field">
+          <label for="quick-name">Descrizione (opzionale)</label>
+          <input type="text" id="quick-name" class="input-control" placeholder="Es. Pranzo fuori / Aperitivo" />
+        </div>
+        <div class="form-grid-2" style="grid-template-columns: repeat(3, 1fr);">
+          <div class="form-field">
+            <label for="quick-carbs">Carbo (g)</label>
+            <input type="number" id="quick-carbs" class="input-control" step="0.1" min="0" inputmode="decimal" placeholder="0" />
+          </div>
+          <div class="form-field">
+            <label for="quick-protein">Proteine (g)</label>
+            <input type="number" id="quick-protein" class="input-control" step="0.1" min="0" inputmode="decimal" placeholder="0" />
+          </div>
+          <div class="form-field">
+            <label for="quick-fat">Grassi (g)</label>
+            <input type="number" id="quick-fat" class="input-control" step="0.1" min="0" inputmode="decimal" placeholder="0" />
+          </div>
+        </div>
+        <button type="submit" class="btn-primary">⚡ Registra nel Diario</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 3: CREATE CUSTOM FOOD ==================== -->
+  <div id="modal-custom-food" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 class="sheet-title">➕ Nuovo Alimento Personalizzato</h3>
+        <button type="button" class="sheet-close-btn" data-close-modal="modal-custom-food">✕</button>
+      </div>
+      <form id="form-custom-food">
+        <div class="form-field">
+          <label for="cf-name">Nome alimento *</label>
+          <input type="text" id="cf-name" class="input-control" placeholder="Es. Pancake proteici fatti in casa" required />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="cf-brand">Marca / Nota</label>
+            <input type="text" id="cf-brand" class="input-control" placeholder="Es. Ricetta casa" />
+          </div>
+          <div class="form-field">
+            <label for="cf-serving-grams">Porzione tipo (g)</label>
+            <input type="number" id="cf-serving-grams" class="input-control" value="100" min="1" max="2000" inputmode="numeric" />
+          </div>
+        </div>
+
+        <p style="margin: 4px 0 8px; font-size: 0.78rem; font-weight: 700; color: var(--accent-primary);">
+          Valori nutrizionali per 100 g di prodotto:
+        </p>
+
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="cf-kcal">Calorie (kcal / 100g) *</label>
+            <input type="number" id="cf-kcal" class="input-control" step="1" min="0" inputmode="decimal" required />
+          </div>
+          <div class="form-field">
+            <label for="cf-protein">Proteine (g / 100g)</label>
+            <input type="number" id="cf-protein" class="input-control" step="0.1" min="0" inputmode="decimal" value="0" />
+          </div>
+          <div class="form-field">
+            <label for="cf-carbs">Carboidrati (g / 100g)</label>
+            <input type="number" id="cf-carbs" class="input-control" step="0.1" min="0" inputmode="decimal" value="0" />
+          </div>
+          <div class="form-field">
+            <label for="cf-sugars">di cui Zuccheri (g)</label>
+            <input type="number" id="cf-sugars" class="input-control" step="0.1" min="0" inputmode="decimal" value="0" />
+          </div>
+          <div class="form-field">
+            <label for="cf-fat">Grassi (g / 100g)</label>
+            <input type="number" id="cf-fat" class="input-control" step="0.1" min="0" inputmode="decimal" value="0" />
+          </div>
+          <div class="form-field">
+            <label for="cf-satfat">di cui Saturi (g)</label>
+            <input type="number" id="cf-satfat" class="input-control" step="0.1" min="0" inputmode="decimal" value="0" />
+          </div>
+          <div class="form-field">
+            <label for="cf-fiber">Fibre (g / 100g)</label>
+            <input type="number" id="cf-fiber" class="input-control" step="0.1" min="0" inputmode="decimal" value="0" />
+          </div>
+          <div class="form-field">
+            <label for="cf-sodium">Sodio (mg / 100g)</label>
+            <input type="number" id="cf-sodium" class="input-control" step="1" min="0" inputmode="numeric" value="0" />
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary">💾 Salva nei Miei Cibi</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 4: BARCODE SCANNER ==================== -->
+  <div id="modal-scanner" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 class="sheet-title">📷 Scansiona Codice a Barre</h3>
+        <button type="button" class="sheet-close-btn" data-close-modal="modal-scanner">✕</button>
+      </div>
+
+      <div id="scanner-video-wrap" class="scanner-video-box">
+        <video id="scanner-video" playsinline muted></video>
+        <div class="scanner-reticle"></div>
+      </div>
+
+      <p id="scanner-status" style="margin: 0 0 12px; font-size: 0.79rem; color: var(--text-muted); text-align: center;">
+        Inquadra il codice a barre EAN della confezione oppure scatta una foto.
+      </p>
+
+      <label for="scanner-photo-input" class="btn-secondary" style="cursor: pointer; margin-bottom: 12px;">
+        📸 Scatta Foto al Codice a Barre
+      </label>
+      <input type="file" id="scanner-photo-input" class="hidden" accept="image/*" capture="environment" />
+
+      <form id="form-manual-barcode" style="display: flex; gap: 8px;">
+        <input type="text" id="manual-barcode-input" class="input-control" inputmode="numeric"
+               placeholder="Oppure digita codice EAN (es. 8076800195057)" />
+        <button type="submit" class="btn-primary" style="width: auto; padding: 0 18px;">Cerca</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 5: PHYSICAL ACTIVITY ==================== -->
+  <div id="modal-activity" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 class="sheet-title">🏃 Registra Attività Fisica</h3>
+        <button type="button" class="sheet-close-btn" data-close-modal="modal-activity">✕</button>
+      </div>
+
+      <div id="activity-presets" class="portion-chips" style="margin-top: 0;">
+        <button type="button" class="portion-chip" data-act="Camminata veloce" data-met="4.3">🚶 Camminata</button>
+        <button type="button" class="portion-chip" data-act="Corsa" data-met="8.8">🏃 Corsa</button>
+        <button type="button" class="portion-chip" data-act="Pesi / Palestra" data-met="5.0">🏋️ Palestra</button>
+        <button type="button" class="portion-chip" data-act="Ciclismo" data-met="6.8">🚴 Bici</button>
+        <button type="button" class="portion-chip" data-act="Nuoto" data-met="7.0">🏊 Nuoto</button>
+        <button type="button" class="portion-chip" data-act="Calcio / Padel" data-met="7.5">🎾 Sport</button>
+      </div>
+
+      <form id="form-activity">
+        <div class="form-field">
+          <label for="act-name">Attività</label>
+          <input type="text" id="act-name" class="input-control" value="Camminata veloce" required />
+        </div>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="act-minutes">Durata (minuti)</label>
+            <input type="number" id="act-minutes" class="input-control" value="40" min="5" max="600" inputmode="numeric" required />
+          </div>
+          <div class="form-field">
+            <label for="act-kcal">Calorie bruciate (kcal)</label>
+            <input type="number" id="act-kcal" class="input-control" value="190" min="10" max="5000" inputmode="numeric" required />
+          </div>
+        </div>
+        <button type="submit" class="btn-primary">🔥 Aggiungi Allenamento</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 6: INSTALL ON PHONE & QR ==================== -->
+  <div id="modal-install" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h3 class="sheet-title">📱 Usa e Installa sul Telefono</h3>
+        <button type="button" class="sheet-close-btn" data-close-modal="modal-install">✕</button>
+      </div>
+
+      <div id="pwa-install-banner" class="hidden" style="margin-bottom: 14px;">
+        <button type="button" id="btn-trigger-pwa-install" class="btn-primary">
+          📲 Installa NutriTrack sulla Schermata Home
+        </button>
+      </div>
+
+      <div id="wifi-server-section">
+        <p id="install-qr-hint" style="margin: 0 0 8px; font-size: 0.82rem; color: var(--text-secondary);">
+          Inquadra il QR Code con la fotocamera del telefono per aprire l'app:
+        </p>
+        <div id="wifi-qr-box" class="qr-code-box">
+          <div style="font-size: 0.82rem; color: #475569;">Generazione QR Code...</div>
+        </div>
+      </div>
+
+      <div style="background: var(--bg-input); border-radius: 14px; padding: 12px 14px; font-size: 0.79rem; color: var(--text-secondary);">
+        <div style="font-weight: 800; color: var(--text-primary); margin-bottom: 6px;">Come averla come App vera sul telefono:</div>
+        <div style="margin-bottom: 6px;">
+          🤖 <strong>Android (Chrome):</strong> apri il menu <strong>⋮</strong> in alto a destra e tocca <strong>"Aggiungi a schermata Home"</strong> o <strong>"Installa app"</strong>.
+        </div>
+        <div>
+          🍏 <strong>iPhone (Safari):</strong> tocca il tasto <strong>Condividi (⬆️)</strong> in basso e scegli <strong>"Aggiungi alla schermata Home"</strong>.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="./js/foods-db.js"></script>
+  <script src="./js/storage.js"></script>
+  <script src="./js/api.js"></script>
+  <script src="./js/charts.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
