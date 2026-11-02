@@ -30,7 +30,23 @@
       "purpose": "any"
     }
   ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "GET",
+    "params": {
+      "title": "share_title",
+      "text": "share_text",
+      "url": "share_url"
+    }
+  },
   "shortcuts": [
+    {
+      "name": "Importa da Chat Gemini",
+      "short_name": "Chat Gemini",
+      "description": "Incolla o sincronizza i pasti dalla tua chat con Gemini",
+      "url": "./index.html?action=gchat",
+      "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }]
+    },
     {
       "name": "Riconosci Piatto AI",
       "short_name": "Foto AI",

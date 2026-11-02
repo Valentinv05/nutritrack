@@ -172,6 +172,22 @@
           </button>
         </div>
 
+        <!-- Gemini Chat Auto-Sync Banner -->
+        <button type="button" id="btn-open-gchat" class="gemini-sync-banner">
+          <div style="display: flex; align-items: center; gap: 11px;">
+            <span style="font-size: 1.55rem;">💬</span>
+            <div>
+              <div style="font-weight: 800; font-size: 0.9rem; color: var(--text-primary);">
+                Importa dalla tua Chat Gemini
+              </div>
+              <div style="font-size: 0.74rem; color: var(--text-secondary);">
+                Incolla messaggi/link della chat o attiva il link automatico 1-Tap
+              </div>
+            </div>
+          </div>
+          <span style="font-weight: 800; color: var(--color-carbs); font-size: 1.1rem;">→</span>
+        </button>
+
         <!-- Water Tracker -->
         <div class="card">
           <div class="card-header" style="margin-bottom: 8px;">
@@ -854,6 +870,72 @@
         <button type="button" id="btn-confirm-ai-items" class="btn-primary">
           ✅ Aggiungi al Diario
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL 8: GEMINI CHAT AUTO-IMPORT ==================== -->
+  <div id="modal-gemini-chat" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-sheet">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div>
+          <h3 class="sheet-title">💬 Sincronizza la tua Chat Gemini</h3>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+            Inserisce automaticamente pasti, calorie, macro, acqua, sport e peso
+          </div>
+        </div>
+        <button type="button" class="sheet-close-btn" data-close-modal="modal-gemini-chat">✕</button>
+      </div>
+
+      <!-- 1-Tap Paste from Clipboard -->
+      <button type="button" id="btn-paste-and-import" class="btn-primary" style="margin-bottom: 10px; background: linear-gradient(135deg, #0284c7, #10b981);">
+        📋 Incolla dagli Appunti e Inserisci Subito
+      </button>
+
+      <div class="form-field" style="margin-bottom: 8px;">
+        <label for="gchat-input">Oppure incolla qui il testo o il link condiviso della tua chat Gemini:</label>
+        <textarea id="gchat-input" class="gchat-textarea"
+                  placeholder="Esempio: incolla la risposta di Gemini con i pasti di oggi (Colazione, Pranzo, Cena...) oppure il link https://g.co/gemini/share/..."></textarea>
+      </div>
+
+      <label class="checkbox-row" style="margin: 6px 0 10px;">
+        <input type="checkbox" id="gchat-auto-insert" checked />
+        <span>⚡ Inserisci subito in automatico nel Diario</span>
+      </label>
+
+      <button type="button" id="btn-run-gchat-import" class="btn-secondary">
+        🚀 Analizza Chat e Inserisci
+      </button>
+
+      <div id="gchat-status-msg" class="hidden" style="margin-top: 10px; font-size: 0.81rem; text-align: center;"></div>
+
+      <!-- Optional Preview Box (when auto-insert is unchecked) -->
+      <div id="gchat-preview-box" class="ai-results-card hidden">
+        <div style="font-weight: 800; font-size: 0.9rem; margin-bottom: 6px;" id="gchat-preview-title">Elementi trovati nella chat:</div>
+        <div id="gchat-preview-list" class="ai-ing-list"></div>
+        <button type="button" id="btn-confirm-gchat-preview" class="btn-primary">
+          ✅ Conferma e Inserisci Tutto
+        </button>
+      </div>
+
+      <!-- Automatic 1-Tap Magic Link Setup for Gemini App -->
+      <div class="magic-setup-card">
+        <div style="font-weight: 800; color: var(--color-carbs); margin-bottom: 4px;">
+          ✨ Vuoi fare tutto in 1 tocco direttamente dall'App Gemini?
+        </div>
+        <p style="margin: 0 0 10px; color: var(--text-secondary);">
+          Copia questa istruzione e inviala <strong>una sola volta</strong> nella tua chat con Gemini (o in un tuo <em>Gem</em>). Da quel momento, ogni volta che racconterai a Gemini cosa mangi, Gemini creerà un pulsante <strong>"📲 Inserisci in automatico su NutriTrack"</strong>: ti basterà toccarlo!
+        </p>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" id="btn-copy-gemini-prompt" class="btn-secondary" style="flex: 1; font-size: 0.79rem; min-height: 38px;">
+            📋 Copia Istruzione per Gemini
+          </button>
+          <a href="https://gemini.google.com/app" target="_blank" rel="noopener noreferrer"
+             class="btn-secondary" style="flex: 0 0 auto; width: auto; padding: 0 14px; font-size: 0.79rem; min-height: 38px; text-decoration: none;">
+            💬 Apri Gemini ↗
+          </a>
+        </div>
       </div>
     </div>
   </div>

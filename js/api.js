@@ -756,6 +756,510 @@
     };
   }
 
+  // ===================== GEMINI CHAT AUTO-IMPORT & MAGIC LINK =====================
+  function normalizeMealSlot(raw, fallback = 'pranzo') {
+    const s = String(raw || '').toLowerCase().trim();
+    if (s.startsWith('col') || s.includes('colazione') || s.includes('breakfast')) return 'colazione';
+    if (s.startsWith('pra') || s.includes('pranzo') || s.includes('lunch')) return 'pranzo';
+    if (s.startsWith('cen') || s.includes('cena') || s.includes('dinner')) return 'cena';
+    if (s.startsWith('spu') || s.includes('spuntin') || s.includes('merend') || s.includes('snack')) return 'spuntini';
+    return fallback;
+  }
+
+  function makeFoodFromPortionTotals({ name, grams, totalKcal, totalCarbs, totalProtein, totalFat, totalFiber = 0, totalSugars = 0, brand = 'Chat Gemini 💬' }) {
+    const g = Math.max(1, Number(grams) || 100);
+    const factor = 100 / g;
+    return {
+      id: `gchat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: String(name || 'Alimento da Gemini').trim(),
+      brand,
+      servingName: `Porzione (${Math.round(g)} g)`,
+      servingGrams: Math.round(g),
+      kcal: Math.max(0, num(totalKcal, 0) * factor),
+      carbs: Math.max(0, num(totalCarbs, 0) * factor),
+      sugars: Math.max(0, num(totalSugars, 0) * factor),
+      protein: Math.max(0, num(totalProtein, 0) * factor),
+      fat: Math.max(0, num(totalFat, 0) * factor),
+      saturatedFat: 0,
+      fiber: Math.max(0, num(totalFiber, 0) * factor),
+      sodium: 0
+    };
+  }
+
+  function parseNumLocale(val, fallback = 0) {
+    if (val === undefined || val === null || val === '') return fallback;
+    const n = parseFloat(String(val).replace(',', '.'));
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function parseMagicQueryParams(inputParamsOrUrl) {
+    let params = null;
+    if (inputParamsOrUrl instanceof URLSearchParams) {
+      params = inputParamsOrUrl;
+    } else {
+      const str = String(inputParamsOrUrl || '');
+      const urlMatch = str.match(/https?:\/\/[^\s)\]"']+\?([^\s)\]"']+)/i);
+      if (urlMatch) {
+        params = new URLSearchParams(urlMatch[1]);
+      } else if (str.includes('auto=1') && str.includes('m=')) {
+        const qIdx = str.indexOf('?');
+        params = new URLSearchParams(qIdx >= 0 ? str.slice(qIdx + 1) : str.trim());
+      }
+    }
+    if (!params) return null;
+    if (!params.get('m') && !params.get('w') && !params.get('act') && !params.get('kg')) {
+      return null;
+    }
+
+    const meals = [];
+    const rawM = params.get('m') || '';
+    for (const seg of rawM.split(';')) {
+      const cleanSeg = seg.trim();
+      if (!cleanSeg) continue;
+      const parts = cleanSeg.split(':');
+      if (parts.length < 4) continue;
+
+      const mealId = normalizeMealSlot(parts[0], 'pranzo');
+      const name = decodeURIComponent(parts[1] || 'Alimento')
+        .replace(/[_+]+/g, ' ')
+        .trim();
+      const grams = Math.max(1, Math.round(parseNumLocale(parts[2], 100)));
+      const totalKcal = Math.max(0, parseNumLocale(parts[3], 0));
+      const totalCarbs = Math.max(0, parseNumLocale(parts[4], 0));
+      const totalProtein = Math.max(0, parseNumLocale(parts[5], 0));
+      const totalFat = Math.max(0, parseNumLocale(parts[6], 0));
+      const totalFiber = Math.max(0, parseNumLocale(parts[7], 0));
+
+      meals.push({
+        mealId,
+        grams,
+        checked: true,
+        food: makeFoodFromPortionTotals({
+          name,
+          grams,
+          totalKcal,
+          totalCarbs,
+          totalProtein,
+          totalFat,
+          totalFiber,
+          brand: 'Link Chat Gemini ⚡'
+        })
+      });
+    }
+
+    const waterMl = Math.max(0, Math.round(parseNumLocale(params.get('w'), 0)));
+
+    const activities = [];
+    const rawAct = params.get('act') || '';
+    for (const seg of rawAct.split(';')) {
+      const cleanSeg = seg.trim();
+      if (!cleanSeg) continue;
+      const parts = cleanSeg.split(':');
+      const actName = decodeURIComponent(parts[0] || 'Allenamento').replace(/[_+]+/g, ' ').trim();
+      const mins = Math.max(1, Math.round(parseNumLocale(parts[1], 30)));
+      const burned = Math.max(1, Math.round(parseNumLocale(parts[2], 150)));
+      activities.push({ name: actName, minutes: mins, kcal: burned });
+    }
+
+    const kgVal = parseNumLocale(params.get('kg'), NaN);
+    const weightKg = Number.isFinite(kgVal) && kgVal >= 25 && kgVal <= 350 ? round1(kgVal) : null;
+    const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : null;
+
+    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg) {
+      return null;
+    }
+
+    return {
+      sourceLabel: 'Link Automatico Gemini',
+      dateKey,
+      meals,
+      waterMl,
+      activities,
+      weightKg
+    };
+  }
+
+  function parseGeminiChatOffline(rawText, defaultMeal = 'pranzo') {
+    const magic = parseMagicQueryParams(rawText);
+    if (magic) return magic;
+
+    const text = String(rawText || '').trim();
+    if (!text) {
+      throw new Error('Incolla un messaggio della tua chat con Gemini.');
+    }
+
+    const meals = [];
+    let waterMl = 0;
+    let weightKg = null;
+    const activities = [];
+    let currentMeal = defaultMeal;
+
+    const localFoods = window.nutriStorage ? window.nutriStorage.getAllLocalFoods() : (window.BUILTIN_FOODS || []);
+
+    const lines = text.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/\*+/g, '').trim();
+      if (!line) continue;
+      const lower = line.toLowerCase();
+
+      // Detect section headers (e.g. "Colazione:", "### Pranzo", "A cena:")
+      if (/^(?:[#\-•\d.)\s☀️🍝🌙🍎🥗]*)?(?:per\s+|a\s+)?(colazione|pranzo|cena|spuntin[oi]|merenda|snack)\b\s*[:\-–]?$/i.test(line)) {
+        currentMeal = normalizeMealSlot(line, currentMeal);
+        continue;
+      }
+      if (/^(?:colazione|a colazione)\s*:/i.test(lower)) currentMeal = 'colazione';
+      else if (/^(?:pranzo|a pranzo)\s*:/i.test(lower)) currentMeal = 'pranzo';
+      else if (/^(?:cena|a cena)\s*:/i.test(lower)) currentMeal = 'cena';
+      else if (/^(?:spuntin[oi]|merenda|snack)\s*:/i.test(lower)) currentMeal = 'spuntini';
+
+      // Skip total/summary lines to avoid double counting
+      if (/^(?:totale|riepilogo|somma|fabbisogno|obiettivo|target|calorie totali|macro totali)\b/i.test(lower)) {
+        continue;
+      }
+
+      // Detect water
+      const waterLiters = lower.match(/(\d+(?:[.,]\d+)?)\s*(?:l|litr[oi])\s+(?:di\s+|d')?acqua/);
+      const waterMlMatch = lower.match(/(\d{2,4})\s*ml\s+(?:di\s+|d')?acqua/);
+      const waterGlasses = lower.match(/(\d+)\s*bicchier[ei]\s+(?:di\s+|d')?acqua/);
+      if (waterLiters) {
+        waterMl += Math.round(parseNumLocale(waterLiters[1], 0) * 1000);
+        continue;
+      }
+      if (waterMlMatch) {
+        waterMl += Math.round(parseNumLocale(waterMlMatch[1], 0));
+        continue;
+      }
+      if (waterGlasses) {
+        waterMl += Math.round(parseNumLocale(waterGlasses[1], 0) * 200);
+        continue;
+      }
+
+      // Detect body weight
+      const weightMatch = lower.match(/\bpeso(?:\s+corporeo|\s+attuale)?\s*[:=]?\s*(\d{2,3}(?:[.,]\d)?)\s*kg\b/);
+      if (weightMatch) {
+        const w = parseNumLocale(weightMatch[1], 0);
+        if (w >= 25 && w <= 350) weightKg = round1(w);
+        continue;
+      }
+
+      // Strip meal prefix if inline ("Colazione: Yogurt greco 150g - 90 kcal")
+      const cleanedLine = line
+        .replace(/^[-•*+]\s*/, '')
+        .replace(/^(?:colazione|pranzo|cena|spuntin[oi]|merenda|snack)\s*:\s*/i, '')
+        .trim();
+
+      // Case A: Line includes explicit kcal (typical Gemini chat response!)
+      const kcalMatch = cleanedLine.match(/(\d+(?:[.,]\d+)?)\s*(?:kcal|calorie)\b/i);
+      if (kcalMatch) {
+        const totalKcal = parseNumLocale(kcalMatch[1], 0);
+        if (totalKcal <= 0 || totalKcal > 5000) continue;
+
+        const beforeKcal = cleanedLine.slice(0, kcalMatch.index);
+        const gramsMatch = beforeKcal.match(/(\d+(?:[.,]\d+)?)\s*(?:g|gr|grammi|ml)\b/i);
+        const grams = gramsMatch ? Math.max(1, Math.round(parseNumLocale(gramsMatch[1], 100))) : 100;
+
+        const carbsM = cleanedLine.match(/(?:carbo(?:idrati)?|\bC)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*g?\b/i)
+          || cleanedLine.match(/(\d+(?:[.,]\d+)?)\s*g?\s*(?:di\s+)?carbo(?:idrati)?\b/i);
+        const protM = cleanedLine.match(/(?:protein[ea]|prot|\bP)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*g?\b/i)
+          || cleanedLine.match(/(\d+(?:[.,]\d+)?)\s*g?\s*(?:di\s+)?protein[ea]\b/i);
+        const fatM = cleanedLine.match(/(?:grassi|lipidi|\bG)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*g?\b/i)
+          || cleanedLine.match(/(\d+(?:[.,]\d+)?)\s*g?\s*(?:di\s+)?grassi\b/i);
+
+        let itemName = beforeKcal
+          .replace(/\(\s*\d+(?:[.,]\d+)?\s*(?:g|gr|grammi|ml)\s*\)/gi, '')
+          .replace(/\b\d+(?:[.,]\d+)?\s*(?:g|gr|grammi|ml)\b/gi, '')
+          .replace(/[-–:—:(]+\s*$/, '')
+          .replace(/^\s*[-–:—]+\s*/, '')
+          .trim();
+
+        if (!itemName || itemName.length < 2) itemName = 'Alimento da chat';
+
+        meals.push({
+          mealId: currentMeal,
+          grams,
+          checked: true,
+          food: makeFoodFromPortionTotals({
+            name: itemName,
+            grams,
+            totalKcal,
+            totalCarbs: carbsM ? parseNumLocale(carbsM[1], 0) : 0,
+            totalProtein: protM ? parseNumLocale(protM[1], 0) : 0,
+            totalFat: fatM ? parseNumLocale(fatM[1], 0) : 0,
+            brand: 'Chat Gemini 💬'
+          })
+        });
+        continue;
+      }
+
+      // Case B: Line without kcal -> match against built-in Italian food DB
+      const gramsInline = cleanedLine.match(/(\d+(?:[.,]\d+)?)\s*(?:g|gr|grammi|ml)\b/i);
+      const normLine = cleanedLine
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+
+      if (normLine.length >= 3 && normLine.length <= 90) {
+        let bestFood = null;
+        let bestScore = 0;
+        for (const f of localFoods) {
+          const fNorm = f.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const words = fNorm.split(/\W+/).filter((w) => w.length >= 4);
+          if (words.length === 0) continue;
+          const hits = words.filter((w) => normLine.includes(w)).length;
+          const score = hits / words.length + (normLine.includes(fNorm) ? 1 : 0);
+          if (hits >= 1 && score > bestScore && score >= 0.6) {
+            bestScore = score;
+            bestFood = f;
+          }
+        }
+        if (bestFood) {
+          const grams = gramsInline
+            ? Math.max(1, Math.round(parseNumLocale(gramsInline[1], bestFood.servingGrams || 100)))
+            : (bestFood.servingGrams || 100);
+          meals.push({
+            mealId: currentMeal,
+            grams,
+            checked: true,
+            food: bestFood
+          });
+        }
+      }
+    }
+
+    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg) {
+      throw new Error(
+        'Non sono riuscito a individuare alimenti nel testo senza chiave API. Configura la chiave API Gemini gratuita per far leggere qualsiasi chat o link in automatico, oppure usa il "Prompt Automatico per Gemini" qui sotto!'
+      );
+    }
+
+    return {
+      sourceLabel: 'Parser Rapido Chat',
+      dateKey: null,
+      meals,
+      waterMl,
+      activities,
+      weightKg
+    };
+  }
+
+  const CHAT_IMPORT_SCHEMA = {
+    type: 'object',
+    properties: {
+      summary_note: {
+        type: 'string',
+        description: 'Breve riepilogo in italiano di cosa è stato estratto dalla chat.'
+      },
+      meals: {
+        type: 'array',
+        description: 'Tutti gli alimenti consumati o previsti estratti dalla chat.',
+        items: {
+          type: 'object',
+          properties: {
+            meal_slot: {
+              type: 'string',
+              enum: ['colazione', 'pranzo', 'cena', 'spuntini'],
+              description: 'Pasto della giornata.'
+            },
+            name: {
+              type: 'string',
+              description: 'Nome dell\'alimento in italiano.'
+            },
+            grams: {
+              type: 'number',
+              description: 'Peso della porzione in grammi o ml.'
+            },
+            total_kcal: {
+              type: 'number',
+              description: 'Calorie TOTALI (kcal) di questa porzione.'
+            },
+            total_carbs_g: {
+              type: 'number',
+              description: 'Carboidrati TOTALI (g) di questa porzione.'
+            },
+            total_sugars_g: {
+              type: 'number',
+              description: 'Zuccheri TOTALI (g) di questa porzione.'
+            },
+            total_protein_g: {
+              type: 'number',
+              description: 'Proteine TOTALI (g) di questa porzione.'
+            },
+            total_fat_g: {
+              type: 'number',
+              description: 'Grassi TOTALI (g) di questa porzione.'
+            },
+            total_fiber_g: {
+              type: 'number',
+              description: 'Fibre TOTALI (g) di questa porzione.'
+            }
+          },
+          required: ['meal_slot', 'name', 'grams', 'total_kcal', 'total_carbs_g', 'total_protein_g', 'total_fat_g']
+        }
+      },
+      water_ml: {
+        type: 'number',
+        description: 'Acqua totale bevuta in ml se menzionata nella chat, altrimenti 0.'
+      },
+      activities: {
+        type: 'array',
+        description: 'Eventuali allenamenti o attività fisiche menzionate nella chat.',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string' },
+            minutes: { type: 'number' },
+            burned_kcal: { type: 'number' }
+          },
+          required: ['name', 'minutes', 'burned_kcal']
+        }
+      },
+      weight_kg: {
+        type: 'number',
+        description: 'Peso corporeo in kg se comunicato dall\'utente nella chat, altrimenti 0.'
+      }
+    },
+    required: ['summary_note', 'meals', 'water_ml', 'activities', 'weight_kg']
+  };
+
+  async function importFromGeminiChat(rawText, defaultMeal = 'pranzo') {
+    const trimmed = String(rawText || '').trim();
+    if (!trimmed) {
+      throw new Error('Incolla il testo o il link della tua chat con Gemini.');
+    }
+
+    // 1. Instant parse if text already contains our Magic Link (?auto=1&m=...)
+    const directMagic = parseMagicQueryParams(trimmed);
+    if (directMagic) return directMagic;
+
+    // 2. If Gemini API key is configured, use Gemini 3.8 Flash (+ url_context if URL present)
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) {
+      return parseGeminiChatOffline(trimmed, defaultMeal);
+    }
+
+    const hasUrl = /https?:\/\/\S+/i.test(trimmed);
+    const bodyPayload = {
+      model: GEMINI_MODEL,
+      store: false,
+      system_instruction: [
+        'Sei l\'assistente di importazione automatica di NutriTrack.',
+        'L\'utente ti fornisce il testo copiato da una sua chat con Gemini (oppure un link condiviso a una chat/pagina).',
+        'Estrai con precisione tutti i cibi consumati o pianificati assegnandoli a colazione, pranzo, cena o spuntini.',
+        'Per ciascun alimento indica i grammi della porzione e le calorie/macronutrienti TOTALI di quella porzione (se nella chat non sono esplicitati i macro, calcolali accuratamente secondo le tabelle CREA italiane).',
+        'Estrai anche eventuale acqua bevuta (in ml), attività fisica/sport e peso corporeo se presenti.'
+      ].join(' '),
+      input: hasUrl
+        ? `Leggi il contenuto di questo link/testo della chat Gemini ed estrai tutti i pasti, acqua, attività e peso da inserire nel diario:\n\n${trimmed}`
+        : `Estrai tutti i pasti, acqua, attività e peso da questa conversazione con Gemini:\n\n${trimmed}`,
+      response_format: {
+        type: 'text',
+        mime_type: 'application/json',
+        schema: CHAT_IMPORT_SCHEMA
+      }
+    };
+
+    if (hasUrl) {
+      bodyPayload.tools = [{ type: 'url_context' }];
+    }
+
+    const res = await fetch(GEMINI_INTERACTIONS_URL, {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Api-Revision': '2026-05-20'
+      },
+      body: JSON.stringify(bodyPayload)
+    });
+
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(data?.error?.message || `Errore API Gemini (HTTP ${res.status})`);
+    }
+
+    let outputText = typeof data?.output_text === 'string' ? data.output_text : '';
+    if (!outputText && Array.isArray(data?.steps)) {
+      const chunks = [];
+      for (let i = data.steps.length - 1; i >= 0; i--) {
+        const step = data.steps[i];
+        if (step && step.type === 'model_output' && Array.isArray(step.content)) {
+          for (const part of step.content) {
+            if (part && part.type === 'text' && typeof part.text === 'string') {
+              chunks.push(part.text);
+            }
+          }
+          if (chunks.length > 0) break;
+        }
+      }
+      outputText = chunks.join('');
+    }
+
+    const parsed = JSON.parse(outputText || '{}');
+    const meals = (parsed.meals || []).map((m) => {
+      const grams = Math.max(1, Math.round(num(m.grams, 100)));
+      return {
+        mealId: normalizeMealSlot(m.meal_slot, defaultMeal),
+        grams,
+        checked: true,
+        food: makeFoodFromPortionTotals({
+          name: m.name,
+          grams,
+          totalKcal: m.total_kcal,
+          totalCarbs: m.total_carbs_g,
+          totalProtein: m.total_protein_g,
+          totalFat: m.total_fat_g,
+          totalFiber: m.total_fiber_g || 0,
+          totalSugars: m.total_sugars_g || 0,
+          brand: 'Chat Gemini AI ✨'
+        })
+      };
+    });
+
+    const waterMl = Math.max(0, Math.round(num(parsed.water_ml, 0)));
+    const activities = (parsed.activities || []).map((a) => ({
+      name: String(a.name || 'Allenamento').trim(),
+      minutes: Math.max(1, Math.round(num(a.minutes, 30))),
+      kcal: Math.max(1, Math.round(num(a.burned_kcal, 150)))
+    }));
+    const wKg = num(parsed.weight_kg, 0);
+    const weightKg = wKg >= 25 && wKg <= 350 ? round1(wKg) : null;
+
+    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg) {
+      throw new Error(
+        hasUrl
+          ? 'Il link condiviso non contiene pasti leggibili pubblicamente. Copia i messaggi direttamente dall\'app Gemini e incollali qui!'
+          : 'Nessun pasto, acqua o allenamento individuato nel testo incollato.'
+      );
+    }
+
+    return {
+      sourceLabel: 'Estrazione AI Chat Gemini',
+      summaryNote: parsed.summary_note || '',
+      dateKey: null,
+      meals,
+      waterMl,
+      activities,
+      weightKg
+    };
+  }
+
+  function buildGeminiCompanionPrompt(appBaseUrl) {
+    const cleanBase = String(appBaseUrl || 'https://valentinv05.github.io/nutritrack/').split('?')[0];
+    return [
+      'Da questo momento sei collegato alla mia app alimentare NutriTrack.',
+      'Ogni volta che in questa chat ti dico cosa ho mangiato, bevuto, il mio allenamento o il mio peso (anche tramite foto o messaggio vocale), calcola calorie e macronutrienti e in fondo alla tua risposta aggiungi SEMPRE un link cliccabile in Markdown chiamato "📲 Inserisci in automatico su NutriTrack" seguendo esattamente questo formato URL:',
+      '',
+      `[📲 Inserisci in automatico su NutriTrack](${cleanBase}?auto=1&m=PASTO:Nome_Cibo:GRAMMI:KCAL_TOT:CARBO_TOT:PROTEINE_TOT:GRASSI_TOT)`,
+      '',
+      'Regole obbligatorie per generare il link:',
+      '1. PASTO deve essere solo uno tra: colazione, pranzo, cena, spuntini.',
+      '2. Nei nomi usa il trattino basso _ al posto degli spazi e non usare accenti/simboli speciali nell\'URL (es. Pasta_al_pomodoro). Usa il punto per i decimali.',
+      '3. KCAL_TOT, CARBO_TOT, PROTEINE_TOT e GRASSI_TOT sono i valori TOTALI della porzione mangiata (non per 100g).',
+      '4. Se ci sono più alimenti separali con punto e virgola (;), esempio: m=colazione:Yogurt_greco:150:86:6:15:0;pranzo:Petto_di_pollo:150:165:0:35:2',
+      '5. Se ho bevuto acqua aggiungi &w=ML (es. &w=500). Se ho fatto sport aggiungi &act=Sport:MINUTI:KCAL (es. &act=Corsa:30:280). Se indico il mio peso aggiungi &kg=PESO (es. &kg=73.5).'
+    ].join('\n');
+  }
+
   window.nutriApi = {
     searchOpenFoodFacts,
     lookupBarcode,
@@ -764,6 +1268,10 @@
     getGeminiApiKey,
     setGeminiApiKey,
     compressImageForAi,
-    analyzeMealWithGemini
+    analyzeMealWithGemini,
+    parseMagicQueryParams,
+    parseGeminiChatOffline,
+    importFromGeminiChat,
+    buildGeminiCompanionPrompt
   };
 })();

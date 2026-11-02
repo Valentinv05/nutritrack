@@ -33,7 +33,8 @@
     activeMet: 4.3,
     deferredInstallPrompt: null,
     aiImage: null,
-    aiResult: null
+    aiResult: null,
+    pendingChatBatch: null
   };
 
   let onlineSearchAbort = null;
@@ -867,6 +868,112 @@
     `;
   }
 
+  // ==================== GEMINI CHAT AUTO-IMPORT CONTROLLER ====================
+  function applyImportBatch(batch) {
+    if (!batch) return;
+    const targetDate = batch.dateKey || uiState.selectedDate;
+    let addedMeals = 0;
+
+    for (const item of batch.meals || []) {
+      if (item.checked !== false && item.grams > 0) {
+        storage.addFoodEntry(targetDate, item.mealId || guessDefaultMeal(), item.food, item.grams);
+        addedMeals++;
+      }
+    }
+
+    if (batch.waterMl > 0) {
+      storage.addWater(targetDate, batch.waterMl);
+    }
+
+    let addedActs = 0;
+    for (const act of batch.activities || []) {
+      storage.addActivity(targetDate, act.name, act.minutes, act.kcal);
+      addedActs++;
+    }
+
+    if (batch.weightKg) {
+      storage.logWeight(targetDate, batch.weightKg);
+    }
+
+    uiState.selectedDate = targetDate;
+    closeModal('modal-gemini-chat');
+    switchTab('diary');
+
+    const summaryParts = [];
+    if (addedMeals > 0) summaryParts.push(`${addedMeals} aliment${addedMeals === 1 ? 'o' : 'i'}`);
+    if (batch.waterMl > 0) summaryParts.push(`+${batch.waterMl}ml acqua`);
+    if (addedActs > 0) summaryParts.push(`${addedActs} sport`);
+    if (batch.weightKg) summaryParts.push(`peso ${batch.weightKg}kg`);
+
+    showToast(`✅ Inseriti in automatico: ${summaryParts.join(', ')}!`);
+  }
+
+  function renderGchatPreview(batch) {
+    uiState.pendingChatBatch = batch;
+    const box = $('gchat-preview-box');
+    const list = $('gchat-preview-list');
+    box.classList.remove('hidden');
+
+    const mealNames = { colazione: '☀️ Colazione', pranzo: '🍝 Pranzo', cena: '🌙 Cena', spuntini: '🍎 Spuntini' };
+    let rowsHtml = (batch.meals || []).map((m, idx) => {
+      const scaled = storage.scaleFood(m.food, m.grams);
+      return `
+        <div class="ai-ing-row">
+          <label class="ai-ing-left">
+            <input type="checkbox" class="gchat-item-check" data-gidx="${idx}" checked />
+            <div>
+              <div style="font-weight: 700; font-size: 0.84rem;">
+                <span style="color: var(--color-carbs);">${mealNames[m.mealId] || m.mealId}:</span> ${escapeHtml(m.food.name)}
+              </div>
+              <div style="font-size: 0.73rem; color: var(--text-muted);">
+                ${m.grams}g · <strong>${scaled.kcal} kcal</strong> · C ${scaled.carbs}g · P ${scaled.protein}g · G ${scaled.fat}g
+              </div>
+            </div>
+          </label>
+        </div>
+      `;
+    }).join('');
+
+    if (batch.waterMl > 0) {
+      rowsHtml += `<div class="ai-ing-row"><div style="font-size: 0.83rem;">💧 Acqua: <strong>+${batch.waterMl} ml</strong></div></div>`;
+    }
+    for (const a of batch.activities || []) {
+      rowsHtml += `<div class="ai-ing-row"><div style="font-size: 0.83rem;">🏃 ${escapeHtml(a.name)}: <strong>${a.minutes} min (−${a.kcal} kcal)</strong></div></div>`;
+    }
+    if (batch.weightKg) {
+      rowsHtml += `<div class="ai-ing-row"><div style="font-size: 0.83rem;">⚖️ Peso registrato: <strong>${batch.weightKg} kg</strong></div></div>`;
+    }
+
+    list.innerHTML = rowsHtml;
+  }
+
+  async function processGeminiChatInput(rawText, forceAutoInsert = null) {
+    const statusEl = $('gchat-status-msg');
+    const runBtn = $('btn-run-gchat-import');
+    statusEl.classList.remove('hidden');
+    statusEl.style.color = 'var(--color-carbs)';
+    statusEl.textContent = '⏳ Lettura della chat Gemini ed estrazione automatica in corso...';
+    $('gchat-preview-box').classList.add('hidden');
+    runBtn.disabled = true;
+
+    try {
+      const batch = await api.importFromGeminiChat(rawText, guessDefaultMeal());
+      statusEl.classList.add('hidden');
+      const shouldAuto = forceAutoInsert !== null ? forceAutoInsert : $('gchat-auto-insert').checked;
+      if (shouldAuto) {
+        $('gchat-input').value = '';
+        applyImportBatch(batch);
+      } else {
+        renderGchatPreview(batch);
+      }
+    } catch (err) {
+      statusEl.style.color = 'var(--color-danger)';
+      statusEl.textContent = `⚠️ ${err.message}`;
+    } finally {
+      runBtn.disabled = false;
+    }
+  }
+
   // ==================== BARCODE SCANNER ====================
   async function handleDetectedBarcode(code) {
     $('scanner-status').textContent = `🔎 Ricerca prodotto con codice ${code}...`;
@@ -1155,6 +1262,65 @@
       $('form-quick-add').reset();
       $('quick-meal').value = guessDefaultMeal();
       openModal('modal-quick');
+    });
+
+    // Gemini Chat Sync Modal
+    $('btn-open-gchat').addEventListener('click', () => {
+      $('gchat-status-msg').classList.add('hidden');
+      $('gchat-preview-box').classList.add('hidden');
+      openModal('modal-gemini-chat');
+    });
+
+    $('btn-paste-and-import').addEventListener('click', async () => {
+      try {
+        const clipText = await navigator.clipboard.readText();
+        if (!clipText || !clipText.trim()) {
+          showToast('Gli appunti sono vuoti! Copia prima il messaggio da Gemini.');
+          return;
+        }
+        $('gchat-input').value = clipText;
+        await processGeminiChatInput(clipText, $('gchat-auto-insert').checked);
+      } catch (err) {
+        $('gchat-input').focus();
+        showToast('Incolla il testo tenendo premuto nel riquadro qui sotto!');
+      }
+    });
+
+    $('btn-run-gchat-import').addEventListener('click', () => {
+      processGeminiChatInput($('gchat-input').value);
+    });
+
+    $('gchat-preview-list').addEventListener('change', (e) => {
+      if (!uiState.pendingChatBatch) return;
+      if (e.target.classList.contains('gchat-item-check')) {
+        const idx = Number(e.target.dataset.gidx);
+        if (uiState.pendingChatBatch.meals[idx]) {
+          uiState.pendingChatBatch.meals[idx].checked = e.target.checked;
+        }
+      }
+    });
+
+    $('btn-confirm-gchat-preview').addEventListener('click', () => {
+      if (uiState.pendingChatBatch) {
+        $('gchat-input').value = '';
+        applyImportBatch(uiState.pendingChatBatch);
+        uiState.pendingChatBatch = null;
+      }
+    });
+
+    $('btn-copy-gemini-prompt').addEventListener('click', async () => {
+      const appUrl = window.location.protocol === 'https:'
+        ? window.location.href.split('?')[0]
+        : 'https://valentinv05.github.io/nutritrack/';
+      const promptText = api.buildGeminiCompanionPrompt(appUrl);
+      try {
+        await navigator.clipboard.writeText(promptText);
+        showToast('📋 Istruzione copiata! Incollala nella tua chat di Gemini.');
+      } catch (err) {
+        $('gchat-input').value = promptText;
+        $('gchat-input').select();
+        showToast('Copia il testo selezionato e invialo a Gemini!');
+      }
     });
 
     // Water buttons
@@ -1737,6 +1903,31 @@
 
   function handleLaunchParams() {
     const params = new URLSearchParams(window.location.search);
+
+    // 1. Automatic 1-Tap Magic Link from Gemini Chat (?auto=1&m=...)
+    if (params.get('auto') === '1' || params.get('m') || params.get('w') || params.get('act') || params.get('kg')) {
+      const batch = api.parseMagicQueryParams(params);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      if (batch) {
+        applyImportBatch(batch);
+        return;
+      }
+    }
+
+    // 2. Android Web Share Target directly from Gemini App
+    const sharedText = [params.get('share_title'), params.get('share_text'), params.get('share_url')]
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    if (sharedText) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+      $('gchat-input').value = sharedText;
+      openModal('modal-gemini-chat');
+      processGeminiChatInput(sharedText, true);
+      return;
+    }
+
+    // 3. Standard PWA Home Screen Shortcuts
     const action = params.get('action');
     if (action === 'add') {
       switchTab('foods');
@@ -1745,6 +1936,8 @@
       openScannerModal();
     } else if (action === 'ai') {
       openAiMealModal();
+    } else if (action === 'gchat') {
+      openModal('modal-gemini-chat');
     }
   }
 

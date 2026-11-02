@@ -1669,6 +1669,53 @@ button {
   font-size: 0.85rem;
 }
 
+/* Gemini Chat Sync Card & Modal */
+.gemini-sync-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 15px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.16), rgba(16, 185, 129, 0.15));
+  border: 1px solid rgba(56, 189, 248, 0.38);
+  box-shadow: var(--shadow-card);
+  text-align: left;
+  width: 100%;
+  transition: transform 0.12s ease;
+}
+
+.gemini-sync-banner:active {
+  transform: scale(0.98);
+}
+
+.gchat-textarea {
+  width: 100%;
+  min-height: 112px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.gchat-textarea:focus {
+  outline: none;
+  border-color: var(--color-carbs);
+}
+
+.magic-setup-card {
+  margin-top: 16px;
+  padding: 13px;
+  border-radius: 15px;
+  background: var(--bg-input);
+  border: 1px dashed rgba(56, 189, 248, 0.45);
+  font-size: 0.79rem;
+}
+
 .hidden {
   display: none !important;
 }
