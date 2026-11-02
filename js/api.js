@@ -807,7 +807,7 @@
       }
     }
     if (!params) return null;
-    if (!params.get('m') && !params.get('w') && !params.get('act') && !params.get('kg')) {
+    if (!params.get('m') && !params.get('w') && !params.get('act') && !params.get('kg') && !params.get('steps')) {
       return null;
     }
 
@@ -863,9 +863,10 @@
 
     const kgVal = parseNumLocale(params.get('kg'), NaN);
     const weightKg = Number.isFinite(kgVal) && kgVal >= 25 && kgVal <= 350 ? round1(kgVal) : null;
+    const steps = Math.max(0, Math.round(parseNumLocale(params.get('steps'), 0)));
     const dateKey = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : null;
 
-    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg) {
+    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg && steps === 0) {
       return null;
     }
 
@@ -874,6 +875,7 @@
       dateKey,
       meals,
       waterMl,
+      steps,
       activities,
       weightKg
     };
@@ -890,6 +892,7 @@
 
     const meals = [];
     let waterMl = 0;
+    let steps = 0;
     let weightKg = null;
     const activities = [];
     let currentMeal = defaultMeal;
@@ -931,6 +934,14 @@
       }
       if (waterGlasses) {
         waterMl += Math.round(parseNumLocale(waterGlasses[1], 0) * 200);
+        continue;
+      }
+
+      // Detect steps (e.g. "8500 passi", "8.500 passi")
+      const stepsMatch = lower.match(/\b(\d{1,3}(?:[.\s]\d{3})+|\d{3,6})\s*passi\b/);
+      if (stepsMatch) {
+        const cleanSteps = Number(stepsMatch[1].replace(/[.\s]/g, '')) || 0;
+        if (cleanSteps > 0 && cleanSteps <= 150000) steps = Math.max(steps, cleanSteps);
         continue;
       }
 
@@ -1026,7 +1037,7 @@
       }
     }
 
-    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg) {
+    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg && steps === 0) {
       throw new Error(
         'Non sono riuscito a individuare alimenti nel testo senza chiave API. Configura la chiave API Gemini gratuita per far leggere qualsiasi chat o link in automatico, oppure usa il "Prompt Automatico per Gemini" qui sotto!'
       );
@@ -1037,6 +1048,7 @@
       dateKey: null,
       meals,
       waterMl,
+      steps,
       activities,
       weightKg
     };
@@ -1100,6 +1112,10 @@
         type: 'number',
         description: 'Acqua totale bevuta in ml se menzionata nella chat, altrimenti 0.'
       },
+      steps: {
+        type: 'number',
+        description: 'Numero di passi effettuati se menzionati nella chat, altrimenti 0.'
+      },
       activities: {
         type: 'array',
         description: 'Eventuali allenamenti o attività fisiche menzionate nella chat.',
@@ -1118,7 +1134,7 @@
         description: 'Peso corporeo in kg se comunicato dall\'utente nella chat, altrimenti 0.'
       }
     },
-    required: ['summary_note', 'meals', 'water_ml', 'activities', 'weight_kg']
+    required: ['summary_note', 'meals', 'water_ml', 'steps', 'activities', 'weight_kg']
   };
 
   async function importFromGeminiChat(rawText, defaultMeal = 'pranzo') {
@@ -1146,11 +1162,11 @@
         'L\'utente ti fornisce il testo copiato da una sua chat con Gemini (oppure un link condiviso a una chat/pagina).',
         'Estrai con precisione tutti i cibi consumati o pianificati assegnandoli a colazione, pranzo, cena o spuntini.',
         'Per ciascun alimento indica i grammi della porzione e le calorie/macronutrienti TOTALI di quella porzione (se nella chat non sono esplicitati i macro, calcolali accuratamente secondo le tabelle CREA italiane).',
-        'Estrai anche eventuale acqua bevuta (in ml), attività fisica/sport e peso corporeo se presenti.'
+        'Estrai anche eventuale acqua bevuta (in ml), passi camminati, attività fisica/sport e peso corporeo se presenti.'
       ].join(' '),
       input: hasUrl
-        ? `Leggi il contenuto di questo link/testo della chat Gemini ed estrai tutti i pasti, acqua, attività e peso da inserire nel diario:\n\n${trimmed}`
-        : `Estrai tutti i pasti, acqua, attività e peso da questa conversazione con Gemini:\n\n${trimmed}`,
+        ? `Leggi il contenuto di questo link/testo della chat Gemini ed estrai tutti i pasti, acqua, passi, attività e peso da inserire nel diario:\n\n${trimmed}`
+        : `Estrai tutti i pasti, acqua, passi, attività e peso da questa conversazione con Gemini:\n\n${trimmed}`,
       response_format: {
         type: 'text',
         mime_type: 'application/json',
@@ -1216,6 +1232,7 @@
     });
 
     const waterMl = Math.max(0, Math.round(num(parsed.water_ml, 0)));
+    const steps = Math.max(0, Math.round(num(parsed.steps, 0)));
     const activities = (parsed.activities || []).map((a) => ({
       name: String(a.name || 'Allenamento').trim(),
       minutes: Math.max(1, Math.round(num(a.minutes, 30))),
@@ -1224,7 +1241,7 @@
     const wKg = num(parsed.weight_kg, 0);
     const weightKg = wKg >= 25 && wKg <= 350 ? round1(wKg) : null;
 
-    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg) {
+    if (meals.length === 0 && waterMl === 0 && activities.length === 0 && !weightKg && steps === 0) {
       throw new Error(
         hasUrl
           ? 'Il link condiviso non contiene pasti leggibili pubblicamente. Copia i messaggi direttamente dall\'app Gemini e incollali qui!'
@@ -1238,6 +1255,7 @@
       dateKey: null,
       meals,
       waterMl,
+      steps,
       activities,
       weightKg
     };
@@ -1247,7 +1265,7 @@
     const cleanBase = String(appBaseUrl || 'https://valentinv05.github.io/nutritrack/').split('?')[0];
     return [
       'Da questo momento sei collegato alla mia app alimentare NutriTrack.',
-      'Ogni volta che in questa chat ti dico cosa ho mangiato, bevuto, il mio allenamento o il mio peso (anche tramite foto o messaggio vocale), calcola calorie e macronutrienti e in fondo alla tua risposta aggiungi SEMPRE un link cliccabile in Markdown chiamato "📲 Inserisci in automatico su NutriTrack" seguendo esattamente questo formato URL:',
+      'Ogni volta che in questa chat ti dico cosa ho mangiato, bevuto, i miei passi, il mio allenamento o il mio peso (anche tramite foto o messaggio vocale), calcola calorie e macronutrienti e in fondo alla tua risposta aggiungi SEMPRE un link cliccabile in Markdown chiamato "📲 Inserisci in automatico su NutriTrack" seguendo esattamente questo formato URL:',
       '',
       `[📲 Inserisci in automatico su NutriTrack](${cleanBase}?auto=1&m=PASTO:Nome_Cibo:GRAMMI:KCAL_TOT:CARBO_TOT:PROTEINE_TOT:GRASSI_TOT)`,
       '',
@@ -1256,8 +1274,135 @@
       '2. Nei nomi usa il trattino basso _ al posto degli spazi e non usare accenti/simboli speciali nell\'URL (es. Pasta_al_pomodoro). Usa il punto per i decimali.',
       '3. KCAL_TOT, CARBO_TOT, PROTEINE_TOT e GRASSI_TOT sono i valori TOTALI della porzione mangiata (non per 100g).',
       '4. Se ci sono più alimenti separali con punto e virgola (;), esempio: m=colazione:Yogurt_greco:150:86:6:15:0;pranzo:Petto_di_pollo:150:165:0:35:2',
-      '5. Se ho bevuto acqua aggiungi &w=ML (es. &w=500). Se ho fatto sport aggiungi &act=Sport:MINUTI:KCAL (es. &act=Corsa:30:280). Se indico il mio peso aggiungi &kg=PESO (es. &kg=73.5).'
+      '5. Se ho bevuto acqua aggiungi &w=ML (es. &w=500). Se indico i passi aggiungi &steps=PASSI (es. &steps=8500). Se ho fatto sport aggiungi &act=Sport:MINUTI:KCAL (es. &act=Corsa:30:280). Se indico il mio peso aggiungi &kg=PESO (es. &kg=73.5).'
     ].join('\n');
+  }
+
+  // ===================== LIVE ACCELEROMETER PEDOMETER (CONTAPASSI) =====================
+  class LiveStepCounter {
+    constructor() {
+      this.active = false;
+      this.wakeLock = null;
+      this.onStep = null;
+      this.gravity = 9.81;
+      this.ringBuf = [0, 0, 0];
+      this.ringIdx = 0;
+      this.abovePeak = false;
+      this.lastStepTs = 0;
+      this.pendingFirstStepTs = 0;
+      this._boundMotion = this._handleMotion.bind(this);
+      this._boundVisibility = this._handleVisibility.bind(this);
+    }
+
+    async _acquireWakeLock() {
+      if (this.active && document.visibilityState === 'visible' && navigator.wakeLock && typeof navigator.wakeLock.request === 'function') {
+        try {
+          this.wakeLock = await navigator.wakeLock.request('screen');
+        } catch (e) {
+          this.wakeLock = null;
+        }
+      }
+    }
+
+    _handleVisibility() {
+      if (this.active && document.visibilityState === 'visible' && (!this.wakeLock || this.wakeLock.released)) {
+        this._acquireWakeLock();
+      }
+    }
+
+    isSupported() {
+      return typeof window !== 'undefined' && 'DeviceMotionEvent' in window;
+    }
+
+    async start(onStepCallback) {
+      if (this.active) return { ok: true };
+      if (!this.isSupported()) {
+        return { ok: false, error: 'Sensori di movimento non supportati su questo dispositivo (usa il telefono!).' };
+      }
+
+      // iOS 13+ requires explicit permission inside a user tap handler
+      if (typeof window.DeviceMotionEvent.requestPermission === 'function') {
+        try {
+          const perm = await window.DeviceMotionEvent.requestPermission();
+          if (perm !== 'granted') {
+            return { ok: false, error: 'Permesso sensori di movimento negato su iPhone.' };
+          }
+        } catch (err) {
+          return { ok: false, error: 'Impossibile richiedere il permesso ai sensori di movimento.' };
+        }
+      }
+
+      this.onStep = onStepCallback;
+      this.active = true;
+      this.gravity = 9.81;
+      this.ringBuf = [0, 0, 0];
+      this.abovePeak = false;
+      this.lastStepTs = 0;
+      this.pendingFirstStepTs = 0;
+
+      window.addEventListener('devicemotion', this._boundMotion, { passive: true });
+      document.addEventListener('visibilitychange', this._boundVisibility);
+
+      // Keep screen awake during live walking session if supported
+      await this._acquireWakeLock();
+
+      return { ok: true };
+    }
+
+    _handleMotion(event) {
+      if (!this.active) return;
+      const acc = event.accelerationIncludingGravity || event.acceleration;
+      if (!acc || acc.x === null || acc.y === null || acc.z === null) return;
+
+      const mag = Math.hypot(acc.x, acc.y, acc.z);
+      // Dynamic gravity baseline
+      this.gravity = 0.92 * this.gravity + 0.08 * mag;
+      const dyn = mag - this.gravity;
+
+      // 3-sample moving average to filter hand jitter
+      this.ringBuf[this.ringIdx % 3] = dyn;
+      this.ringIdx++;
+      const smooth = (this.ringBuf[0] + this.ringBuf[1] + this.ringBuf[2]) / 3;
+
+      const now = performance.now();
+      const HIGH_THRESH = 1.22;
+      const LOW_THRESH = 0.32;
+      const MIN_STEP_MS = 270;
+      const MAX_RHYTHM_MS = 2100;
+
+      if (!this.abovePeak && smooth > HIGH_THRESH) {
+        this.abovePeak = true;
+      } else if (this.abovePeak && smooth < LOW_THRESH) {
+        this.abovePeak = false;
+        const dt = now - this.lastStepTs;
+
+        if (dt >= MIN_STEP_MS) {
+          // Require 2 rhythmic impulses when starting from rest to avoid false triggers when picking up phone
+          if (this.lastStepTs === 0 || dt > MAX_RHYTHM_MS) {
+            if (this.pendingFirstStepTs > 0 && now - this.pendingFirstStepTs <= MAX_RHYTHM_MS && now - this.pendingFirstStepTs >= MIN_STEP_MS) {
+              this.lastStepTs = now;
+              this.pendingFirstStepTs = 0;
+              this.onStep?.(2); // Credit both initial rhythmic steps!
+            } else {
+              this.pendingFirstStepTs = now;
+            }
+          } else {
+            this.lastStepTs = now;
+            this.onStep?.(1);
+          }
+        }
+      }
+    }
+
+    stop() {
+      this.active = false;
+      window.removeEventListener('devicemotion', this._boundMotion);
+      document.removeEventListener('visibilitychange', this._boundVisibility);
+      if (this.wakeLock) {
+        try { this.wakeLock.release(); } catch (e) {}
+        this.wakeLock = null;
+      }
+    }
   }
 
   window.nutriApi = {
@@ -1265,6 +1410,7 @@
     lookupBarcode,
     detectBarcodeFromImageFile,
     LiveBarcodeScanner,
+    LiveStepCounter,
     getGeminiApiKey,
     setGeminiApiKey,
     compressImageForAi,

@@ -188,6 +188,44 @@
           <span style="font-weight: 800; color: var(--color-carbs); font-size: 1.1rem;">→</span>
         </button>
 
+        <!-- Step Counter (Contapassi) -->
+        <div class="card">
+          <div class="card-header" style="margin-bottom: 8px;">
+            <h2 class="card-title">👟 Contapassi</h2>
+            <strong id="steps-summary-text" style="font-size: 0.86rem; color: var(--accent-primary);">0 / 8.000 passi</strong>
+          </div>
+          <div class="progress-track" style="height: 8px;">
+            <div id="steps-progress-bar" class="progress-fill fill-steps"></div>
+          </div>
+
+          <div class="steps-meta-row">
+            <div>
+              📏 <strong id="steps-km-val">0.0 km</strong> · 🔥 <strong id="steps-kcal-val" style="color: var(--color-burn);">0 kcal</strong>
+            </div>
+            <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer; font-size: 0.73rem; color: var(--text-muted);">
+              <input type="checkbox" id="chk-steps-burn" checked style="accent-color: var(--accent-primary);" />
+              <span>Somma al budget kcal</span>
+            </label>
+          </div>
+
+          <button type="button" id="btn-toggle-pedometer" class="pedometer-live-btn">
+            <span>▶️</span>
+            <span id="pedometer-btn-label">Avvia Contapassi Live (Sensori Telefono)</span>
+          </button>
+
+          <div class="water-controls">
+            <button type="button" id="btn-steps-500" class="steps-btn">+500 👟</button>
+            <button type="button" id="btn-steps-1000" class="steps-btn">+1.000 👟</button>
+            <button type="button" id="btn-steps-manual-toggle" class="steps-btn secondary">✏️ Imposta</button>
+          </div>
+
+          <form id="form-steps-manual" class="weight-form-row hidden" style="margin-top: 10px; margin-bottom: 0;">
+            <input type="number" id="steps-manual-input" class="input-control" min="0" max="150000" step="1"
+                   inputmode="numeric" placeholder="Totale passi di oggi (es. da Salute / Orologio)" />
+            <button type="submit" class="btn-primary" style="width: auto; min-height: 42px; padding: 0 16px;">Salva</button>
+          </form>
+        </div>
+
         <!-- Water Tracker -->
         <div class="card">
           <div class="card-header" style="margin-bottom: 8px;">
@@ -276,12 +314,16 @@
             <div id="kpi-avg-protein" class="kpi-value" style="color: var(--color-protein);">0 g</div>
           </div>
           <div class="kpi-card">
+            <div class="kpi-label">Media Passi</div>
+            <div id="kpi-avg-steps" class="kpi-value" style="color: var(--accent-primary);">0 👟</div>
+          </div>
+          <div class="kpi-card">
             <div class="kpi-label">Giorni Tracciati</div>
             <div id="kpi-logged-days" class="kpi-value">0 / 7</div>
           </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Serie Attiva</div>
-            <div id="kpi-streak" class="kpi-value" style="color: #fb923c;">🔥 0 gg</div>
+          <div class="kpi-card" style="grid-column: span 2; display: flex; align-items: center; justify-content: space-between;">
+            <div class="kpi-label">Serie Attiva Giorni Consecutivi</div>
+            <div id="kpi-streak" class="kpi-value" style="color: #fb923c; margin-top: 0;">🔥 0 gg</div>
           </div>
         </div>
 
@@ -399,6 +441,10 @@
               <div class="form-field">
                 <label for="target-fiber">Fibre (g)</label>
                 <input type="number" id="target-fiber" class="input-control" min="5" max="100" inputmode="numeric" />
+              </div>
+              <div class="form-field" style="grid-column: span 2;">
+                <label for="target-steps">Obiettivo Passi giornalieri</label>
+                <input type="number" id="target-steps" class="input-control" step="500" min="1000" max="50000" inputmode="numeric" />
               </div>
             </div>
           </div>

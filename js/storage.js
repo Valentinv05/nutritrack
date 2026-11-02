@@ -88,6 +88,9 @@ function computeTargetsFromProfile(profile) {
   const fat = Math.round((kcal * (preset.fatPct / 100)) / 9);
   const fiber = Math.max(25, Math.round((kcal / 1000) * 14));
   const waterMl = Math.round((weight * 33) / 100) * 100;
+  const steps = profile.activityLevel === 'active' || profile.activityLevel === 'very_active'
+    ? 10000
+    : (profile.activityLevel === 'moderate' ? 8500 : 8000);
 
   return {
     bmr,
@@ -100,7 +103,8 @@ function computeTargetsFromProfile(profile) {
     sugarsMax: Math.round((kcal * 0.1) / 4),
     saturatedFatMax: Math.round((kcal * 0.1) / 9),
     sodiumMax: 2000,
-    waterMl: Math.max(1800, Math.min(4000, waterMl))
+    waterMl: Math.max(1800, Math.min(4000, waterMl)),
+    steps
   };
 }
 
@@ -116,6 +120,7 @@ function createDefaultState() {
     goalMode: 'maintain',
     macroPreset: 'balanced',
     useAutoTargets: true,
+    countStepsInCalories: true,
     theme: 'dark'
   };
   const autoTargets = computeTargetsFromProfile(defaultProfile);
@@ -182,6 +187,7 @@ class NutriStorage {
           spuntini: []
         },
         waterMl: 0,
+        steps: 0,
         activities: [],
         notes: ''
       };
@@ -193,6 +199,7 @@ class NutriStorage {
     return this.state.days[dateKey] || {
       meals: { colazione: [], pranzo: [], cena: [], spuntini: [] },
       waterMl: 0,
+      steps: 0,
       activities: [],
       notes: ''
     };
@@ -303,6 +310,30 @@ class NutriStorage {
     return day.waterMl;
   }
 
+  setSteps(dateKey, totalSteps) {
+    const day = this.ensureDay(dateKey);
+    day.steps = Math.max(0, Math.min(150000, Math.round(Number(totalSteps) || 0)));
+    this.save();
+    return day.steps;
+  }
+
+  addSteps(dateKey, deltaSteps) {
+    const day = this.ensureDay(dateKey);
+    day.steps = Math.max(0, Math.min(150000, Math.round((day.steps || 0) + (Number(deltaSteps) || 0))));
+    this.save();
+    return day.steps;
+  }
+
+  computeStepsMetrics(stepsCount) {
+    const s = Math.max(0, Math.round(Number(stepsCount) || 0));
+    const heightCm = Number(this.state.profile.heightCm) || 175;
+    const weightKg = Number(this.state.profile.weightKg) || 74;
+    const strideMeters = (heightCm * 0.414) / 100;
+    const km = round1((s * strideMeters) / 1000);
+    const kcal = Math.round(s * weightKg * 0.00055);
+    return { steps: s, km, kcal };
+  }
+
   addActivity(dateKey, name, minutes, burnedKcal) {
     const day = this.ensureDay(dateKey);
     day.activities.push({
@@ -369,7 +400,10 @@ class NutriStorage {
     totals.fiber = round1(totals.fiber);
     totals.sodium = Math.round(totals.sodium);
 
-    const burnedKcal = (day.activities || []).reduce((acc, a) => acc + (Number(a.kcal) || 0), 0);
+    const activitiesKcal = (day.activities || []).reduce((acc, a) => acc + (Number(a.kcal) || 0), 0);
+    const stepsMetrics = this.computeStepsMetrics(day.steps || 0);
+    const stepsBurned = this.state.profile.countStepsInCalories !== false ? stepsMetrics.kcal : 0;
+    const burnedKcal = activitiesKcal + stepsBurned;
     const targets = this.state.targets;
     const netBudget = (targets.kcal || 2000) + burnedKcal;
     const remainingKcal = netBudget - totals.kcal;
@@ -380,6 +414,11 @@ class NutriStorage {
       totals,
       mealSummaries,
       burnedKcal,
+      activitiesKcal,
+      steps: stepsMetrics.steps,
+      stepsKm: stepsMetrics.km,
+      stepsKcal: stepsMetrics.kcal,
+      stepsTarget: targets.steps || 8000,
       netBudget,
       remainingKcal,
       waterMl: day.waterMl || 0,
@@ -483,7 +522,8 @@ class NutriStorage {
         carbs: Math.max(0, Math.round(Number(manualTargets.carbs) || 220)),
         fat: Math.max(10, Math.round(Number(manualTargets.fat) || 65)),
         fiber: Math.max(5, Math.round(Number(manualTargets.fiber) || 28)),
-        waterMl: Math.max(500, Math.round(Number(manualTargets.waterMl) || 2200))
+        waterMl: Math.max(500, Math.round(Number(manualTargets.waterMl) || 2200)),
+        steps: Math.max(1000, Math.round(Number(manualTargets.steps) || 8000))
       };
     }
     this.save();

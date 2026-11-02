@@ -468,6 +468,59 @@ button {
 .fill-protein { background: var(--color-protein); }
 .fill-fat { background: var(--color-fat); }
 .fill-water { background: linear-gradient(90deg, #0284c7, #38bdf8); }
+.fill-steps { background: linear-gradient(90deg, #10b981, #fbbf24); }
+
+.pedometer-live-btn {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 0.81rem;
+  font-weight: 800;
+  background: var(--bg-card-elevated);
+  border: 1px solid rgba(16, 185, 129, 0.38);
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+
+.pedometer-live-btn.active {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #10b981;
+  color: #34d399;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16);
+}
+
+.steps-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.steps-btn {
+  flex: 1;
+  padding: 8px 8px;
+  border-radius: 10px;
+  font-size: 0.77rem;
+  font-weight: 700;
+  background: var(--accent-glow);
+  color: var(--accent-primary);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+}
+
+.steps-btn.secondary {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
 
 /* Micros Accordion */
 .micros-toggle-btn {

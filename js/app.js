@@ -40,6 +40,7 @@
   let onlineSearchAbort = null;
   let onlineDebounceTimer = null;
   const barcodeScanner = new api.LiveBarcodeScanner();
+  const stepCounter = new api.LiveStepCounter();
 
   // ==================== HELPERS ====================
   const $ = (id) => document.getElementById(id);
@@ -157,10 +158,38 @@
     }
   }
 
+  function syncPedometerButtonUi() {
+    const btn = $('btn-toggle-pedometer');
+    const lbl = $('pedometer-btn-label');
+    if (!btn || !lbl) return;
+    const iconSpan = btn.querySelector('span');
+    btn.classList.toggle('active', stepCounter.active);
+    if (stepCounter.active) {
+      if (iconSpan) iconSpan.textContent = '🟢';
+      lbl.textContent = 'Sensore Passi Attivo (in tasca/mano) · Tocca per fermare';
+    } else {
+      if (iconSpan) iconSpan.textContent = '▶️';
+      lbl.textContent = 'Avvia Contapassi Live (Sensori Telefono)';
+    }
+  }
+
   function renderDiary() {
     renderHeaderAndDate();
     const summary = storage.getDaySummary(uiState.selectedDate);
-    const { totals, targets, burnedKcal, netBudget, remainingKcal, waterMl, mealSummaries, day } = summary;
+    const {
+      totals,
+      targets,
+      burnedKcal,
+      steps,
+      stepsKm,
+      stepsKcal,
+      stepsTarget,
+      netBudget,
+      remainingKcal,
+      waterMl,
+      mealSummaries,
+      day
+    } = summary;
 
     // Calorie Ring & Numbers
     $('stat-eaten-kcal').textContent = totals.kcal;
@@ -208,6 +237,14 @@
 
     $('micro-sodium-val').textContent = `${totals.sodium} / ${targets.sodiumMax || 2000} mg`;
     setBarProgress($('micro-sodium-bar'), totals.sodium, targets.sodiumMax || 2000, true);
+
+    // Step Counter (Contapassi)
+    $('steps-summary-text').textContent = `${steps.toLocaleString('it-IT')} / ${stepsTarget.toLocaleString('it-IT')} passi`;
+    setBarProgress($('steps-progress-bar'), steps, stepsTarget);
+    $('steps-km-val').textContent = `${stepsKm} km`;
+    $('steps-kcal-val').textContent = `${stepsKcal} kcal`;
+    $('chk-steps-burn').checked = storage.state.profile.countStepsInCalories !== false;
+    syncPedometerButtonUi();
 
     // Water
     const waterTarget = targets.waterMl || 2200;
@@ -622,6 +659,8 @@
     let sumCarbs = 0;
     let sumProtein = 0;
     let sumFat = 0;
+    let stepsDaysCount = 0;
+    let sumSteps = 0;
 
     for (let i = nDays - 1; i >= 0; i--) {
       const dKey = window.shiftDateKey(endKey, -i);
@@ -647,13 +686,20 @@
         sumProtein += daySum.totals.protein;
         sumFat += daySum.totals.fat;
       }
+
+      if (daySum.steps > 0) {
+        stepsDaysCount++;
+        sumSteps += daySum.steps;
+      }
     }
 
     const avgKcal = activeDaysCount > 0 ? Math.round(sumKcal / activeDaysCount) : 0;
     const avgProtein = activeDaysCount > 0 ? Math.round(sumProtein / activeDaysCount) : 0;
+    const avgSteps = stepsDaysCount > 0 ? Math.round(sumSteps / stepsDaysCount) : 0;
 
     $('kpi-avg-kcal').textContent = `${avgKcal} kcal`;
     $('kpi-avg-protein').textContent = `${avgProtein} g`;
+    $('kpi-avg-steps').textContent = `${avgSteps.toLocaleString('it-IT')} 👟`;
     $('kpi-logged-days').textContent = `${activeDaysCount} / ${nDays}`;
     $('kpi-streak').textContent = `🔥 ${storage.getStreakDays()} gg`;
 
@@ -726,6 +772,7 @@
     $('target-protein').value = t.protein;
     $('target-fat').value = t.fat;
     $('target-fiber').value = t.fiber;
+    $('target-steps').value = t.steps || 8000;
 
     $('manual-targets-panel').classList.toggle('hidden', $('prof-auto-targets').checked);
     $('profile-gemini-key').value = api.getGeminiApiKey();
@@ -757,7 +804,7 @@
         <div><div style="color: var(--text-muted); font-size: 0.7rem;">Target Consigliato</div><strong style="color: var(--accent-primary);">${calc.kcal} kcal</strong></div>
       </div>
       <div style="margin-top: 8px; text-align: center; font-size: 0.75rem; color: var(--text-secondary);">
-        Macro consigliati: <strong>C ${calc.carbs}g</strong> · <strong>P ${calc.protein}g</strong> · <strong>G ${calc.fat}g</strong> · Acqua <strong>${calc.waterMl} ml</strong>
+        Macro consigliati: <strong>C ${calc.carbs}g</strong> · <strong>P ${calc.protein}g</strong> · <strong>G ${calc.fat}g</strong> · Acqua <strong>${calc.waterMl} ml</strong> · Passi <strong>${(calc.steps || 8000).toLocaleString('it-IT')}</strong>
       </div>
     `;
   }
@@ -885,6 +932,10 @@
       storage.addWater(targetDate, batch.waterMl);
     }
 
+    if (batch.steps > 0) {
+      storage.setSteps(targetDate, batch.steps);
+    }
+
     let addedActs = 0;
     for (const act of batch.activities || []) {
       storage.addActivity(targetDate, act.name, act.minutes, act.kcal);
@@ -902,6 +953,7 @@
     const summaryParts = [];
     if (addedMeals > 0) summaryParts.push(`${addedMeals} aliment${addedMeals === 1 ? 'o' : 'i'}`);
     if (batch.waterMl > 0) summaryParts.push(`+${batch.waterMl}ml acqua`);
+    if (batch.steps > 0) summaryParts.push(`${batch.steps.toLocaleString('it-IT')} passi`);
     if (addedActs > 0) summaryParts.push(`${addedActs} sport`);
     if (batch.weightKg) summaryParts.push(`peso ${batch.weightKg}kg`);
 
@@ -936,6 +988,10 @@
 
     if (batch.waterMl > 0) {
       rowsHtml += `<div class="ai-ing-row"><div style="font-size: 0.83rem;">💧 Acqua: <strong>+${batch.waterMl} ml</strong></div></div>`;
+    }
+    if (batch.steps > 0) {
+      const sm = storage.computeStepsMetrics(batch.steps);
+      rowsHtml += `<div class="ai-ing-row"><div style="font-size: 0.83rem;">👟 Passi: <strong>${batch.steps.toLocaleString('it-IT')} passi</strong> (${sm.km} km · −${sm.kcal} kcal)</div></div>`;
     }
     for (const a of batch.activities || []) {
       rowsHtml += `<div class="ai-ing-row"><div style="font-size: 0.83rem;">🏃 ${escapeHtml(a.name)}: <strong>${a.minutes} min (−${a.kcal} kcal)</strong></div></div>`;
@@ -1323,6 +1379,72 @@
       }
     });
 
+    // Step Counter (Contapassi) buttons & Live Pedometer
+    $('chk-steps-burn').addEventListener('change', (e) => {
+      storage.state.profile.countStepsInCalories = e.target.checked;
+      storage.save();
+      renderDiary();
+      showToast(e.target.checked
+        ? '🔥 Calorie dei passi sommate al budget giornaliero'
+        : 'Calorie dei passi escluse dal budget giornaliero');
+    });
+
+    $('btn-toggle-pedometer').addEventListener('click', async () => {
+      if (stepCounter.active) {
+        stepCounter.stop();
+        syncPedometerButtonUi();
+        showToast('⏹️ Contapassi Live fermato');
+        return;
+      }
+
+      const res = await stepCounter.start((delta) => {
+        const todayKey = window.formatDateKey(new Date());
+        storage.addSteps(todayKey, delta);
+        if (uiState.selectedDate === todayKey && uiState.activeTab === 'diary') {
+          renderDiary();
+        }
+      });
+
+      if (!res.ok) {
+        showToast(`⚠️ ${res.error}`);
+        return;
+      }
+
+      syncPedometerButtonUi();
+      showToast('👟 Contapassi Live attivo! Cammina con il telefono in tasca o in mano.');
+    });
+
+    $('btn-steps-500').addEventListener('click', () => {
+      storage.addSteps(uiState.selectedDate, 500);
+      renderDiary();
+      showToast('👟 +500 passi registrati');
+    });
+
+    $('btn-steps-1000').addEventListener('click', () => {
+      storage.addSteps(uiState.selectedDate, 1000);
+      renderDiary();
+      showToast('👟 +1.000 passi registrati');
+    });
+
+    $('btn-steps-manual-toggle').addEventListener('click', () => {
+      const form = $('form-steps-manual');
+      const isHidden = form.classList.toggle('hidden');
+      if (!isHidden) {
+        const curSteps = storage.getDay(uiState.selectedDate).steps || 0;
+        $('steps-manual-input').value = curSteps > 0 ? curSteps : '';
+        $('steps-manual-input').focus();
+      }
+    });
+
+    $('form-steps-manual').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = Math.max(0, Math.round(Number($('steps-manual-input').value) || 0));
+      storage.setSteps(uiState.selectedDate, val);
+      $('form-steps-manual').classList.add('hidden');
+      renderDiary();
+      showToast(`👟 Passi impostati a ${val.toLocaleString('it-IT')}!`);
+    });
+
     // Water buttons
     $('btn-water-minus').addEventListener('click', () => {
       storage.addWater(uiState.selectedDate, -200);
@@ -1684,7 +1806,8 @@
         carbs: $('target-carbs').value,
         protein: $('target-protein').value,
         fat: $('target-fat').value,
-        fiber: $('target-fiber').value
+        fiber: $('target-fiber').value,
+        steps: $('target-steps').value
       };
 
       storage.updateProfileAndTargets(draft, manual);
@@ -1916,7 +2039,7 @@
     const params = new URLSearchParams(window.location.search);
 
     // 1. Automatic 1-Tap Magic Link from Gemini Chat (?auto=1&m=...)
-    if (params.get('auto') === '1' || params.get('m') || params.get('w') || params.get('act') || params.get('kg')) {
+    if (params.get('auto') === '1' || params.get('m') || params.get('w') || params.get('steps') || params.get('act') || params.get('kg')) {
       const batch = api.parseMagicQueryParams(params);
       window.history.replaceState({}, document.title, window.location.pathname);
       if (batch) {
